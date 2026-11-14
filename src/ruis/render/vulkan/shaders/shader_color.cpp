@@ -1,0 +1,51 @@
+/*
+ruis-render-vulkan - Vulkan renderer
+
+Copyright (C) 2012-2026  Ivan Gagis <igagis@gmail.com>
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program. If not, see <http://www.gnu.org/licenses/>.
+*/
+
+/* ================ LICENSE END ================ */
+
+#include "shader_color.hpp"
+
+#include "shader_spirv.hpp"
+
+using namespace ruis::render::vulkan;
+
+shader_color::shader_color(const utki::shared_ref<const ruis::render::context>& rendering_context) :
+	ruis::render::coloring_shader(rendering_context),
+	ctx_ref(rendering_context)
+{}
+
+void shader_color::render(
+	const r4::matrix4<float>& m,
+	const ruis::render::vertex_array& va,
+	const r4::vector4<float>& color
+) const
+{
+	vulkan_shader_render(
+		this->ctx_ref, //
+		shader_kind::color,
+		spirv_shader_color_vertex,
+		sizeof(spirv_shader_color_vertex) / sizeof(uint32_t),
+		spirv_shader_color_fragment,
+		sizeof(spirv_shader_color_fragment) / sizeof(uint32_t),
+		nullptr, // no texture
+		m,
+		color,
+		va
+	);
+}
