@@ -1,0 +1,1962 @@
+/*
+ruis-render-vulkan - Vulkan renderer
+
+Copyright (C) 2012-2026  Ivan Gagis <igagis@gmail.com>
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program. If not, see <http://www.gnu.org/licenses/>.
+*/
+
+/* ================ LICENSE END ================ */
+
+#include "context.hpp"
+
+#include <cstring>
+#include <limits>
+
+#include "frame_buffer.hpp"
+#include "index_buffer.hpp"
+#include "shaders/shader_color.hpp"
+#include "shaders/shader_color_pos_lum.hpp"
+#include "shaders/shader_color_pos_tex.hpp"
+#include "shaders/shader_color_pos_tex_alpha.hpp"
+#include "shaders/shader_pos_clr.hpp"
+#include "shaders/shader_pos_tex.hpp"
+#include "texture_2d.hpp"
+#include "texture_depth.hpp"
+#include "vertex_array.hpp"
+#include "vertex_buffer.hpp"
+
+using namespace ruis::render::vulkan;
+
+namespace {
+VkSurfaceFormatKHR pick_surface_format(VkPhysicalDevice phys, VkSurfaceKHR surface)
+{
+	// Check if the surface is supported by the physical device
+	VkBool32 supported = VK_FALSE;
+	vkGetPhysicalDeviceSurfaceSupportKHR(phys, 0, surface, &supported);
+
+	uint32_t count = 0;
+	vkGetPhysicalDeviceSurfaceFormatsKHR(phys, surface, &count, nullptr);
+	std::vector<VkSurfaceFormatKHR> formats(count);
+	if (count > 0) {
+		vkGetPhysicalDeviceSurfaceFormatsKHR(phys, surface, &count, formats.data());
+	}
+
+	if (count == 0) {
+		throw std::runtime_error("no surface formats reported");
+	}
+
+	// prefer an 8-bit RGBA format
+	for (const auto& f : formats) {
+		if (f.format == VK_FORMAT_R8G8B8A8_UNORM) {
+			return f;
+		}
+	}
+	for (const auto& f : formats) {
+		if (f.format == VK_FORMAT_B8G8R8A8_UNORM) {
+			return f;
+		}
+	}
+	// fall back to the first format
+	return formats[0];
+}
+
+VkPresentModeKHR pick_present_mode(VkPhysicalDevice phys, VkSurfaceKHR surface)
+{
+	uint32_t count = 0;
+	vkGetPhysicalDeviceSurfacePresentModesKHR(phys, surface, &count, nullptr);
+	std::vector<VkPresentModeKHR> modes(count);
+	vkGetPhysicalDeviceSurfacePresentModesKHR(phys, surface, &count, modes.data());
+
+	for (const auto m : modes) {
+		if (m == VK_PRESENT_MODE_MAILBOX_KHR) {
+			return m;
+		}
+	}
+	return VK_PRESENT_MODE_FIFO_KHR;
+}
+} // namespace
+
+context::context(
+	const utki::shared_ref<ruis::render::native_window>& native_window, //
+	const utki::shared_ref<const surface_provider>& surface_provider
+) :
+	ruis::render::context(native_window, [] {
+			r4::matrix4<float> m{};
+			// maps the framework's normalized viewport coordinates (x right, y down,
+			// zero at the top-left, right/bottom edges at (1, 1)) to the Vulkan NDC.
+			//
+			// In the Vulkan NDC (with a positive-height viewport) -1 -1 corresponds
+			// to the top-left corner, 1 1 to the bottom-right corner, and z points
+			// away from the viewer. This is the same orientation as the framework
+			// (y down, z away), so no axis flip is needed here.
+			//
+			// (In contrast, OpenGL's viewport has y up, so its initial_matrix flips
+			// y and also flips z, to keep the coordinate system right-handed.)
+			m.set_identity()
+				.translate(-1, -1)
+				.scale(2, 2);
+			return parameters{m};
+	}()),
+	surface_provider_ref(surface_provider)
+{
+	(void)native_window;
+
+	this->instance = surface_provider.get().get_instance();
+	this->physical_device = surface_provider.get().get_physical_device();
+	this->device = surface_provider.get().get_device();
+	this->queue = surface_provider.get().get_queue();
+	this->surface = surface_provider.get().get_surface();
+
+	vkGetPhysicalDeviceProperties(this->physical_device, &this->device_properties);
+
+	// ---- command submission resources ----
+	{
+		const auto pool_info = VkCommandPoolCreateInfo{
+			.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+			.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+			.queueFamilyIndex = 0
+		};
+		{ VkCommandPool _vu_tmp_command_pool{}; VU_CHECK(vkCreateCommandPool(this->device, &pool_info, nullptr, &_vu_tmp_command_pool)); this->command_pool = _vu_tmp_command_pool; }
+
+		const auto alloc_info = VkCommandBufferAllocateInfo{
+			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+			.commandPool = this->command_pool,
+			.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+			.commandBufferCount = 1
+		};
+		VU_CHECK(vkAllocateCommandBuffers(this->device, &alloc_info, &this->command_buffer));
+	}
+	{
+		const auto pool_info = VkCommandPoolCreateInfo{
+			.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+			.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+			.queueFamilyIndex = 0
+		};
+		{ VkCommandPool _vu_tmp_one_shot_pool{}; VU_CHECK(vkCreateCommandPool(this->device, &pool_info, nullptr, &_vu_tmp_one_shot_pool)); this->one_shot_pool = _vu_tmp_one_shot_pool; }
+
+		const auto alloc_info = VkCommandBufferAllocateInfo{
+			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+			.commandPool = this->one_shot_pool,
+			.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+			.commandBufferCount = 1
+		};
+		VU_CHECK(vkAllocateCommandBuffers(this->device, &alloc_info, &this->one_shot_command_buffer));
+	}
+	{
+		const auto fence_info = VkFenceCreateInfo{.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+		{ VkFence _vu_tmp_frame_fence{}; VU_CHECK(vkCreateFence(this->device, &fence_info, nullptr, &_vu_tmp_frame_fence)); this->frame_fence = _vu_tmp_frame_fence; }
+		{ VkFence _vu_tmp_one_shot_fence{}; VU_CHECK(vkCreateFence(this->device, &fence_info, nullptr, &_vu_tmp_one_shot_fence)); this->one_shot_fence = _vu_tmp_one_shot_fence; }
+	}
+	{
+		const auto sem_info = VkSemaphoreCreateInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+		{ VkSemaphore _vu_tmp_image_available_sem{}; VU_CHECK(vkCreateSemaphore(this->device, &sem_info, nullptr, &_vu_tmp_image_available_sem)); this->image_available_sem = _vu_tmp_image_available_sem; }
+		{ VkSemaphore _vu_tmp_render_finished_sem{}; VU_CHECK(vkCreateSemaphore(this->device, &sem_info, nullptr, &_vu_tmp_render_finished_sem)); this->render_finished_sem = _vu_tmp_render_finished_sem; }
+	}
+	{
+		const VkDescriptorPoolSize pool_sizes[2] = {
+			{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 16384},
+			{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 16384}
+		};
+		const auto pool_info = VkDescriptorPoolCreateInfo{
+			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+			.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
+			.maxSets = 16384,
+			.poolSizeCount = 2,
+			.pPoolSizes = pool_sizes
+		};
+		{ VkDescriptorPool _vu_tmp_descriptor_pool{}; VU_CHECK(vkCreateDescriptorPool(this->device, &pool_info, nullptr, &_vu_tmp_descriptor_pool)); this->descriptor_pool = _vu_tmp_descriptor_pool; }
+	}
+
+	// ---- descriptor set layouts + pipeline layouts ----
+	{
+		// the UBO is read from both the vertex shader (matrix) and the fragment
+		// shader (color), so both stages must be in the stage flags
+		const auto ubo_binding = VkDescriptorSetLayoutBinding{
+			.binding = 0,
+			.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+			.descriptorCount = 1,
+			.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
+		};
+		{ const auto dsl_info = VkDescriptorSetLayoutCreateInfo{ .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .bindingCount = 1, .pBindings = &ubo_binding }; VkDescriptorSetLayout _vu_tmp_dsl_no_tex{}; VU_CHECK(vkCreateDescriptorSetLayout(this->device, &dsl_info, nullptr, &_vu_tmp_dsl_no_tex)); this->dsl_no_tex = _vu_tmp_dsl_no_tex; }
+
+		const VkDescriptorSetLayoutBinding with_tex_bindings[] = {
+			ubo_binding,
+			{
+				.binding = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.descriptorCount = 1,
+				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT
+			}
+		};
+		{ const auto dsl_info = VkDescriptorSetLayoutCreateInfo{ .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .bindingCount = 2, .pBindings = with_tex_bindings }; VkDescriptorSetLayout _vu_tmp_dsl_with_tex{}; VU_CHECK(vkCreateDescriptorSetLayout(this->device, &dsl_info, nullptr, &_vu_tmp_dsl_with_tex)); this->dsl_with_tex = _vu_tmp_dsl_with_tex; }
+	}
+	{
+		{ const auto pl_info = VkPipelineLayoutCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 1, .pSetLayouts = &this->dsl_no_tex }; VkPipelineLayout _vu_tmp_pipeline_layout_no_tex{}; VU_CHECK(vkCreatePipelineLayout(this->device, &pl_info, nullptr, &_vu_tmp_pipeline_layout_no_tex)); this->pipeline_layout_no_tex = _vu_tmp_pipeline_layout_no_tex; }
+		{ const auto pl_info = VkPipelineLayoutCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 1, .pSetLayouts = &this->dsl_with_tex }; VkPipelineLayout _vu_tmp_pipeline_layout_with_tex{}; VU_CHECK(vkCreatePipelineLayout(this->device, &pl_info, nullptr, &_vu_tmp_pipeline_layout_with_tex)); this->pipeline_layout_with_tex = _vu_tmp_pipeline_layout_with_tex; }
+	}
+	{ const auto pc_info = VkPipelineCacheCreateInfo{.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO}; VkPipelineCache _vu_tmp_pipeline_cache{}; VU_CHECK(vkCreatePipelineCache(this->device, &pc_info, nullptr, &_vu_tmp_pipeline_cache)); this->pipeline_cache = _vu_tmp_pipeline_cache; }
+
+	// ---- per-draw uniform buffer ring ----
+	// the ring starts empty; slots are allocated on demand in allocate_ubo_slot()
+
+	// ---- swapchain ----
+	this->create_swapchain();
+
+	// ---- depth image ----
+	this->create_render_passes();
+
+	// ---- swapchain framebuffers ----
+	this->create_swapchain_framebuffers();
+}
+
+void context::create_swapchain()
+{
+	const auto dims = this->native_window.get().get_dims();
+	this->window_dims = r4::vector2<uint32_t>(std::max<uint32_t>(1, dims.x()), std::max<uint32_t>(1, dims.y()));
+
+	const auto surface_format = pick_surface_format(this->physical_device, this->surface);
+	this->swapchain_format = surface_format.format;
+
+	VkSurfaceCapabilitiesKHR caps{};
+	VU_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(this->physical_device, this->surface, &caps));
+
+	// clamp the dimensions to the supported range
+	uint32_t width = this->window_dims.x();
+	uint32_t height = this->window_dims.y();
+	if (caps.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
+		width = caps.currentExtent.width;
+		height = caps.currentExtent.height;
+	}
+	if (width < caps.minImageExtent.width)
+		width = caps.minImageExtent.width;
+	if (width > caps.maxImageExtent.width)
+		width = caps.maxImageExtent.width;
+	if (height < caps.minImageExtent.height)
+		height = caps.minImageExtent.height;
+	if (height > caps.maxImageExtent.height)
+		height = caps.maxImageExtent.height;
+
+	uint32_t image_count = caps.minImageCount + 1;
+	if (caps.maxImageCount > 0 && image_count > caps.maxImageCount) {
+		image_count = caps.maxImageCount;
+	}
+
+	const auto present_mode = pick_present_mode(this->physical_device, this->surface);
+
+	const uint32_t queue_family = 0;
+
+	const auto info = VkSwapchainCreateInfoKHR{
+		.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+		.surface = this->surface,
+		.minImageCount = image_count,
+		.imageFormat = this->swapchain_format,
+		.imageColorSpace = surface_format.colorSpace,
+		.imageExtent = {width, height},
+		.imageArrayLayers = 1,
+		.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+		.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+		.queueFamilyIndexCount = 1,
+		.pQueueFamilyIndices = &queue_family,
+		.preTransform = caps.currentTransform,
+		.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+		.presentMode = present_mode,
+		.clipped = VK_TRUE,
+		.oldSwapchain = VK_NULL_HANDLE
+	};
+
+	if (this->swapchain != VK_NULL_HANDLE) {
+		// NOTE: do NOT destroy swapchain images with vkDestroyImage - they are managed by the swapchain
+		// Destroy the image views first
+		for (auto view : this->swapchain_image_views) {
+			if (view != VK_NULL_HANDLE) {
+				vkDestroyImageView(this->device, view, nullptr);
+			}
+		}
+		vkDestroySwapchainKHR(this->device, this->swapchain, nullptr);
+		this->swapchain_images.clear();
+		this->swapchain_image_views.clear();
+	}
+
+	{ VkSwapchainKHR _vu_tmp_swapchain{}; VU_CHECK(vkCreateSwapchainKHR(this->device, &info, nullptr, &_vu_tmp_swapchain)); this->swapchain = _vu_tmp_swapchain; }
+
+	uint32_t count = 0;
+	VU_CHECK(vkGetSwapchainImagesKHR(this->device, this->swapchain, &count, nullptr));
+	this->swapchain_images.resize(count);
+	VU_CHECK(vkGetSwapchainImagesKHR(this->device, this->swapchain, &count, this->swapchain_images.data()));
+	this->swapchain_image_count = count;
+
+	this->window_dims = r4::vector2<uint32_t>(width, height);
+
+	// recreate the depth image to match the new size
+	this->create_depth_image();
+
+	// recreate framebuffers for the new swapchain (only if render passes already exist)
+	if (this->swapchain_render_pass_clear != VK_NULL_HANDLE) {
+		this->create_swapchain_framebuffers();
+	}
+}
+
+void context::ensure_swapchain_valid()
+{
+	// query the actual surface extent (reflects the true window size, which may
+	// differ from the app-tracked window dims if the window manager resized it)
+	VkSurfaceCapabilitiesKHR caps{};
+	VU_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(this->physical_device, this->surface, &caps));
+
+	const uint32_t cur_w = (caps.currentExtent.width != std::numeric_limits<uint32_t>::max()) ? caps.currentExtent.width : this->window_dims.x();
+	const uint32_t cur_h = (caps.currentExtent.height != std::numeric_limits<uint32_t>::max()) ? caps.currentExtent.height : this->window_dims.y();
+	const auto w = std::max<uint32_t>(1, cur_w);
+	const auto h = std::max<uint32_t>(1, cur_h);
+	if (w == this->window_dims.x() && h == this->window_dims.y() && !this->swapchain_suboptimal) {
+		return;
+	}
+	// the window was resized (or the swapchain is suboptimal); wait for the GPU to
+	// finish before recreating the swapchain
+	VU_CHECK(vkQueueWaitIdle(this->queue));
+	// reset the frame state (the in-flight frame is discarded)
+	this->frame_begun = false;
+	this->render_pass_in_progress = false;
+	this->frame_has_swapchain = false;
+	this->current_swapchain_image = -1;
+	this->create_swapchain();
+	this->swapchain_suboptimal = false;
+}
+
+void context::create_depth_image()
+{
+	// destroy the old depth image if it exists
+	if (this->depth_image_view != VK_NULL_HANDLE) {
+		vkDestroyImageView(this->device, this->depth_image_view, nullptr);
+		this->depth_image_view = VK_NULL_HANDLE;
+	}
+	if (this->depth_image != VK_NULL_HANDLE) {
+		vkDestroyImage(this->device, this->depth_image, nullptr);
+		this->depth_image = VK_NULL_HANDLE;
+	}
+	if (this->depth_image_memory != VK_NULL_HANDLE) {
+		vkFreeMemory(this->device, this->depth_image_memory, nullptr);
+		this->depth_image_memory = VK_NULL_HANDLE;
+	}
+
+	const auto image_info = VkImageCreateInfo{
+		.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+		.imageType = VK_IMAGE_TYPE_2D,
+		.format = VK_FORMAT_D32_SFLOAT,
+		.extent = {
+			this->window_dims.x(),
+			this->window_dims.y(),
+			1
+		},
+		.mipLevels = 1,
+		.arrayLayers = 1,
+		.samples = VK_SAMPLE_COUNT_1_BIT,
+		.tiling = VK_IMAGE_TILING_OPTIMAL,
+		.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+		.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
+	};
+	{ VkImage _vu_tmp_depth_image{}; VU_CHECK(vkCreateImage(this->device, &image_info, nullptr, &_vu_tmp_depth_image)); this->depth_image = _vu_tmp_depth_image; }
+
+	VkMemoryRequirements mem_reqs{};
+	vkGetImageMemoryRequirements(this->device, this->depth_image, &mem_reqs);
+	const auto alloc_info = VkMemoryAllocateInfo{
+		.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+		.allocationSize = mem_reqs.size,
+		.memoryTypeIndex = pick_device_local_memory_type(this->physical_device, mem_reqs)
+	};
+	VU_CHECK(vkAllocateMemory(this->device, &alloc_info, nullptr, &this->depth_image_memory));
+	VU_CHECK(vkBindImageMemory(this->device, this->depth_image, this->depth_image_memory, 0));
+
+	{ const auto view_info = VkImageViewCreateInfo{ .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = this->depth_image, .viewType = VK_IMAGE_VIEW_TYPE_2D, .format = VK_FORMAT_D32_SFLOAT, .subresourceRange = { .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT, .baseMipLevel = 0, .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1 } }; VkImageView _vu_tmp_depth_image_view{}; VU_CHECK(vkCreateImageView(this->device, &view_info, nullptr, &_vu_tmp_depth_image_view)); this->depth_image_view = _vu_tmp_depth_image_view; }
+}
+
+void context::create_render_passes()
+{
+	// depth image (used by the swapchain render passes)
+	this->create_depth_image();
+
+	auto make_render_pass = [this](
+								VkFormat color_format, //
+								VkImageLayout color_final_layout, //
+								VkImageLayout color_load_initial_layout, //
+								bool has_depth, //
+								VkAttachmentLoadOp load_op
+	) {
+		std::vector<VkAttachmentDescription> attachments;
+		attachments.push_back(VkAttachmentDescription{
+			.format = color_format,
+			.samples = VK_SAMPLE_COUNT_1_BIT,
+			.loadOp = load_op,
+			.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+			.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+			.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+			// when loadOp is LOAD the initialLayout must equal the image's current
+			// layout: swapchain images are in PRESENT_SRC_KHR after present, while
+			// FBO color images (created in SHADER_READ_ONLY_OPTIMAL) stay there
+			.initialLayout = (load_op == VK_ATTACHMENT_LOAD_OP_LOAD) ? color_load_initial_layout : VK_IMAGE_LAYOUT_UNDEFINED,
+			.finalLayout = color_final_layout
+		});
+		if (has_depth) {
+			attachments.push_back(VkAttachmentDescription{
+				.format = VK_FORMAT_D32_SFLOAT,
+				.samples = VK_SAMPLE_COUNT_1_BIT,
+				.loadOp = load_op,
+				.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+				.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+				.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+				.initialLayout = (load_op == VK_ATTACHMENT_LOAD_OP_LOAD) ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED,
+				.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+			});
+		}
+
+		const auto color_ref = VkAttachmentReference{
+			.attachment = 0,
+			.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+		};
+		std::vector<VkAttachmentReference> refs = {color_ref};
+		if (has_depth) {
+			refs.push_back(VkAttachmentReference{
+				.attachment = 1,
+				.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+			});
+		}
+
+		const auto subpass = VkSubpassDescription{
+			.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+			.inputAttachmentCount = 0,
+			.pInputAttachments = nullptr,
+			.colorAttachmentCount = 1,
+			.pColorAttachments = &color_ref,
+			.pResolveAttachments = nullptr,
+			.pDepthStencilAttachment = has_depth ? &refs[1] : nullptr,
+			.preserveAttachmentCount = 0,
+			.pPreserveAttachments = nullptr
+		};
+
+		const auto info = VkRenderPassCreateInfo{
+			.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+			.attachmentCount = uint32_t(attachments.size()),
+			.pAttachments = attachments.data(),
+			.subpassCount = 1,
+			.pSubpasses = &subpass,
+			.dependencyCount = 0,
+			.pDependencies = nullptr
+		};
+		{
+			VkRenderPass _handle{};
+			VU_CHECK(vkCreateRenderPass(this->device, &info, nullptr, &_handle));
+			return _handle;
+		}
+	};
+
+	this->swapchain_render_pass_clear =
+		make_render_pass(this->swapchain_format, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, true, VK_ATTACHMENT_LOAD_OP_CLEAR);
+	this->swapchain_render_pass_load =
+		make_render_pass(this->swapchain_format, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, true, VK_ATTACHMENT_LOAD_OP_LOAD);
+	this->fbo_render_pass_clear_depth =
+		make_render_pass(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, true, VK_ATTACHMENT_LOAD_OP_CLEAR);
+	this->fbo_render_pass_load_depth =
+		make_render_pass(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, true, VK_ATTACHMENT_LOAD_OP_LOAD);
+	this->fbo_render_pass_clear_nod =
+		make_render_pass(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, false, VK_ATTACHMENT_LOAD_OP_CLEAR);
+	this->fbo_render_pass_load_nod =
+		make_render_pass(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, false, VK_ATTACHMENT_LOAD_OP_LOAD);
+}
+
+void context::create_swapchain_framebuffers()
+{
+	// destroy the old framebuffers (they reference the old swapchain images)
+	for (auto fb : this->swapchain_framebuffers) {
+		if (fb != VK_NULL_HANDLE) {
+			vkDestroyFramebuffer(this->device, fb, nullptr);
+		}
+	}
+	this->swapchain_framebuffers.clear();
+	this->swapchain_image_views.resize(this->swapchain_images.size());
+	this->swapchain_framebuffers.resize(this->swapchain_images.size());
+
+	for (uint32_t i = 0; i < this->swapchain_image_count; ++i) {
+		// create image view
+		{
+			const auto view_info = VkImageViewCreateInfo{
+				.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+				.image = this->swapchain_images[i],
+				.viewType = VK_IMAGE_VIEW_TYPE_2D,
+				.format = this->swapchain_format,
+				.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
+			};
+			{ VkImageView _vu_tmp{}; VU_CHECK(vkCreateImageView(this->device, &view_info, nullptr, &_vu_tmp)); this->swapchain_image_views[i] = _vu_tmp; }
+		}
+
+		// create framebuffer (color + depth, matching the swapchain render pass)
+		const VkImageView attachments[2] = {this->swapchain_image_views[i], this->depth_image_view};
+		const auto fb_info = VkFramebufferCreateInfo{
+			.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+			.renderPass = this->swapchain_render_pass_clear, // same attachment layout for clear/load
+			.attachmentCount = 2,
+			.pAttachments = attachments,
+			.width = this->window_dims.x(),
+			.height = this->window_dims.y(),
+			.layers = 1
+		};
+		{ VkFramebuffer _vu_tmp{}; VU_CHECK(vkCreateFramebuffer(this->device, &fb_info, nullptr, &_vu_tmp)); this->swapchain_framebuffers[i] = _vu_tmp; }
+	}
+}
+
+context::~context()
+{
+	vkDeviceWaitIdle(this->device);
+
+	// destroy frame state
+	if (this->frame_fence != VK_NULL_HANDLE) {
+		vkDestroyFence(this->device, this->frame_fence, nullptr);
+	}
+	if (this->one_shot_fence != VK_NULL_HANDLE) {
+		vkDestroyFence(this->device, this->one_shot_fence, nullptr);
+	}
+	if (this->image_available_sem != VK_NULL_HANDLE) {
+		vkDestroySemaphore(this->device, this->image_available_sem, nullptr);
+	}
+	if (this->render_finished_sem != VK_NULL_HANDLE) {
+		vkDestroySemaphore(this->device, this->render_finished_sem, nullptr);
+	}
+	if (this->command_buffer != VK_NULL_HANDLE) {
+		vkFreeCommandBuffers(this->device, this->command_pool, 1, &this->command_buffer);
+	}
+	if (this->command_pool != VK_NULL_HANDLE) {
+		vkDestroyCommandPool(this->device, this->command_pool, nullptr);
+	}
+	if (this->one_shot_command_buffer != VK_NULL_HANDLE) {
+		vkFreeCommandBuffers(this->device, this->one_shot_pool, 1, &this->one_shot_command_buffer);
+	}
+	if (this->one_shot_pool != VK_NULL_HANDLE) {
+		vkDestroyCommandPool(this->device, this->one_shot_pool, nullptr);
+	}
+
+	// destroy pipelines
+	for (auto& [key, pipeline] : this->pipelines) {
+		vkDestroyPipeline(this->device, pipeline, nullptr);
+	}
+
+	if (this->pipeline_cache != VK_NULL_HANDLE) {
+		vkDestroyPipelineCache(this->device, this->pipeline_cache, nullptr);
+	}
+	if (this->pipeline_layout_no_tex != VK_NULL_HANDLE) {
+		vkDestroyPipelineLayout(this->device, this->pipeline_layout_no_tex, nullptr);
+	}
+	if (this->pipeline_layout_with_tex != VK_NULL_HANDLE) {
+		vkDestroyPipelineLayout(this->device, this->pipeline_layout_with_tex, nullptr);
+	}
+	if (this->dsl_no_tex != VK_NULL_HANDLE) {
+		vkDestroyDescriptorSetLayout(this->device, this->dsl_no_tex, nullptr);
+	}
+	if (this->dsl_with_tex != VK_NULL_HANDLE) {
+		vkDestroyDescriptorSetLayout(this->device, this->dsl_with_tex, nullptr);
+	}
+	if (this->descriptor_pool != VK_NULL_HANDLE) {
+		vkDestroyDescriptorPool(this->device, this->descriptor_pool, nullptr);
+	}
+
+	// free the per-draw UBO ring
+	for (size_t i = 0; i < this->ubo_ring.size(); ++i) {
+		if (this->ubo_ring_map[i] != nullptr) {
+			vkUnmapMemory(this->device, this->ubo_ring_mem[i]);
+		}
+		if (this->ubo_ring[i] != VK_NULL_HANDLE) {
+			vkDestroyBuffer(this->device, this->ubo_ring[i], nullptr);
+		}
+		if (this->ubo_ring_mem[i] != VK_NULL_HANDLE) {
+			vkFreeMemory(this->device, this->ubo_ring_mem[i], nullptr);
+		}
+	}
+
+	// destroy render passes
+	if (this->swapchain_render_pass_clear != VK_NULL_HANDLE) {
+		vkDestroyRenderPass(this->device, this->swapchain_render_pass_clear, nullptr);
+	}
+	if (this->swapchain_render_pass_load != VK_NULL_HANDLE) {
+		vkDestroyRenderPass(this->device, this->swapchain_render_pass_load, nullptr);
+	}
+	if (this->fbo_render_pass_clear_depth != VK_NULL_HANDLE) {
+		vkDestroyRenderPass(this->device, this->fbo_render_pass_clear_depth, nullptr);
+	}
+	if (this->fbo_render_pass_load_depth != VK_NULL_HANDLE) {
+		vkDestroyRenderPass(this->device, this->fbo_render_pass_load_depth, nullptr);
+	}
+	if (this->fbo_render_pass_clear_nod != VK_NULL_HANDLE) {
+		vkDestroyRenderPass(this->device, this->fbo_render_pass_clear_nod, nullptr);
+	}
+	if (this->fbo_render_pass_load_nod != VK_NULL_HANDLE) {
+		vkDestroyRenderPass(this->device, this->fbo_render_pass_load_nod, nullptr);
+	}
+
+	// destroy swapchain framebuffers
+	for (auto fb : this->swapchain_framebuffers) {
+		if (fb != VK_NULL_HANDLE) {
+			vkDestroyFramebuffer(this->device, fb, nullptr);
+		}
+	}
+
+	// destroy swapchain image views
+	for (auto view : this->swapchain_image_views) {
+		if (view != VK_NULL_HANDLE) {
+			vkDestroyImageView(this->device, view, nullptr);
+		}
+	}
+
+	// destroy depth image
+	if (this->depth_image_view != VK_NULL_HANDLE) {
+		vkDestroyImageView(this->device, this->depth_image_view, nullptr);
+	}
+	if (this->depth_image != VK_NULL_HANDLE) {
+		vkDestroyImage(this->device, this->depth_image, nullptr);
+		vkFreeMemory(this->device, this->depth_image_memory, nullptr);
+	}
+
+	// destroy swapchain (do NOT destroy swapchain images with vkDestroyImage - they are managed by the swapchain)
+	if (this->swapchain != VK_NULL_HANDLE) {
+		vkDestroySwapchainKHR(this->device, this->swapchain, nullptr);
+	}
+	this->swapchain_images.clear();
+}
+
+// ===============================
+// = factory functions =
+
+utki::shared_ref<ruis::render::context::shaders> context::make_shaders() const
+{
+	auto ret = utki::make_shared<ruis::render::context::shaders>();
+	// NOLINTNEXTLINE(bugprone-unused-return-value, "false positive")
+	ret.get().pos_tex = std::make_unique<shader_pos_tex>(this->get_shared_ref());
+	// NOLINTNEXTLINE(bugprone-unused-return-value, "false positive")
+	ret.get().color_pos = std::make_unique<shader_color>(this->get_shared_ref());
+	// NOLINTNEXTLINE(bugprone-unused-return-value, "false positive")
+	ret.get().pos_clr = std::make_unique<shader_pos_clr>(this->get_shared_ref());
+	// NOLINTNEXTLINE(bugprone-unused-return-value, "false positive")
+	ret.get().color_pos_tex = std::make_unique<shader_color_pos_tex>(this->get_shared_ref());
+	// NOLINTNEXTLINE(bugprone-unused-return-value, "false positive")
+	ret.get().color_pos_tex_alpha = std::make_unique<shader_color_pos_tex_alpha>(this->get_shared_ref());
+	// NOLINTNEXTLINE(bugprone-unused-return-value, "false positive")
+	ret.get().color_pos_lum = std::make_unique<shader_color_pos_lum>(this->get_shared_ref());
+	return ret;
+}
+
+utki::shared_ref<ruis::render::texture_2d> context::make_texture_2d(
+	rasterimage::format format,
+	rasterimage::dimensioned::dimensions_type dims,
+	texture_2d_parameters params
+) const
+{
+	return utki::make_shared<texture_2d>(this->get_shared_ref(), format, dims, nullptr, 0, params);
+}
+
+utki::shared_ref<ruis::render::texture_2d> context::make_texture_2d(
+	const rasterimage::image_variant& imvar,
+	texture_2d_parameters params
+) const
+{
+	// Not supported (need rvalue reference to move the data)
+	throw std::logic_error("vulkan make_texture_2d: const image_variant not supported");
+}
+
+utki::shared_ref<ruis::render::texture_2d> context::make_texture_2d(
+	rasterimage::image_variant&& imvar, //
+	texture_2d_parameters params
+) const
+{
+	auto iv = std::move(imvar);
+	return std::visit(
+		[this, &imvar = iv, &params](auto&& im) -> utki::shared_ref<ruis::render::texture_2d> {
+			if constexpr (sizeof(im.pixels().front().front()) != 1) {
+				throw std::logic_error("vulkan make_texture_2d: non-8bit images are not supported");
+			} else {
+				// NOTE: do NOT flip_vertical() here. Unlike OpenGL (texture origin at
+				// bottom-left), Vulkan's image row 0 is the top of the texture, so the
+				// top-to-bottom image data must be uploaded as-is.
+				auto data = im.pixels();
+				return utki::make_shared<texture_2d>(
+					this->get_shared_ref(), //
+					imvar.get_format(),
+					im.dims(),
+					data.front().data(),
+					data.size_bytes(),
+					std::move(params)
+				);
+			}
+		},
+		iv.variant
+	);
+}
+
+utki::shared_ref<ruis::render::texture_depth> context::make_texture_depth(
+	rasterimage::dimensioned::dimensions_type dims
+) const
+{
+	return utki::make_shared<texture_depth>(this->get_shared_ref(), dims);
+}
+
+utki::shared_ref<ruis::render::texture_cube> context::make_texture_cube(
+	rasterimage::image_variant&& positive_x,
+	rasterimage::image_variant&& negative_x,
+	rasterimage::image_variant&& positive_y,
+	rasterimage::image_variant&& negative_y,
+	rasterimage::image_variant&& positive_z,
+	rasterimage::image_variant&& negative_z
+) const
+{
+	(void)positive_x;
+	(void)negative_x;
+	(void)positive_y;
+	(void)negative_y;
+	(void)positive_z;
+	(void)negative_z;
+	throw std::runtime_error("vulkan make_texture_cube: not implemented");
+}
+
+utki::shared_ref<ruis::render::vertex_buffer> context::make_vertex_buffer(utki::span<const r4::vector4<float>> vertices) const
+{
+	std::vector<float> padded;
+	padded.reserve(vertices.size() * 4);
+	for (const auto& v : vertices) {
+		padded.push_back(v.x());
+		padded.push_back(v.y());
+		padded.push_back(v.z());
+		padded.push_back(v.w());
+	}
+	return utki::make_shared<vertex_buffer>(this->get_shared_ref(), std::move(padded));
+}
+
+utki::shared_ref<ruis::render::vertex_buffer> context::make_vertex_buffer(utki::span<const r4::vector3<float>> vertices) const
+{
+	std::vector<float> padded;
+	padded.reserve(vertices.size() * 4);
+	for (const auto& v : vertices) {
+		padded.push_back(v.x());
+		padded.push_back(v.y());
+		padded.push_back(v.z());
+		padded.push_back(1.0f);
+	}
+	return utki::make_shared<vertex_buffer>(this->get_shared_ref(), std::move(padded));
+}
+
+utki::shared_ref<ruis::render::vertex_buffer> context::make_vertex_buffer(utki::span<const r4::vector2<float>> vertices) const
+{
+	std::vector<float> padded;
+	padded.reserve(vertices.size() * 4);
+	for (const auto& v : vertices) {
+		padded.push_back(v.x());
+		padded.push_back(v.y());
+		padded.push_back(0.0f);
+		padded.push_back(1.0f);
+	}
+	return utki::make_shared<vertex_buffer>(this->get_shared_ref(), std::move(padded));
+}
+
+utki::shared_ref<ruis::render::vertex_buffer> context::make_vertex_buffer(utki::span<const float> vertices) const
+{
+	// a flat list of floats: interpreted as 4-component vertices
+	const auto count = vertices.size() / 4;
+	std::vector<float> padded(vertices.begin(), vertices.end());
+	(void)count;
+	return utki::make_shared<vertex_buffer>(this->get_shared_ref(), std::move(padded));
+}
+
+utki::shared_ref<ruis::render::index_buffer> context::make_index_buffer(utki::span<const uint16_t> indices) const
+{
+	return utki::make_shared<index_buffer>(this->get_shared_ref(), indices);
+}
+
+utki::shared_ref<ruis::render::index_buffer> context::make_index_buffer(utki::span<const uint32_t> indices) const
+{
+	return utki::make_shared<index_buffer>(this->get_shared_ref(), indices);
+}
+
+utki::shared_ref<ruis::render::vertex_array> context::make_vertex_array(
+	std::vector<utki::shared_ref<const ruis::render::vertex_buffer>> buffers, //
+	utki::shared_ref<const ruis::render::index_buffer> indices,
+	ruis::render::vertex_array::mode rendering_mode
+) const
+{
+	return utki::make_shared<vertex_array>(this->get_shared_ref(), std::move(buffers), std::move(indices), rendering_mode);
+}
+
+utki::shared_ref<ruis::render::frame_buffer> context::make_framebuffer( //
+	std::shared_ptr<ruis::render::texture_2d> color,
+	std::shared_ptr<ruis::render::texture_depth> depth,
+	std::shared_ptr<ruis::render::texture_stencil> stencil
+)
+{
+	return utki::make_shared<frame_buffer>(
+		this->get_shared_ref(), //
+		std::move(color),
+		std::move(depth),
+		std::move(stencil)
+	);
+}
+
+// ===============================
+// = state control functions =
+
+void context::set_framebuffer_internal(ruis::render::frame_buffer* fb)
+{
+	// if a render pass is in progress, end it before switching the framebuffer
+	if (this->render_pass_in_progress) {
+		this->end_render_pass_internal();
+	}
+
+	this->current_fb = fb;
+}
+
+void context::clear_framebuffer_color()
+{
+	this->pending_clear = true;
+}
+
+void context::clear_framebuffer_depth()
+{
+	this->pending_clear = true;
+}
+
+void context::clear_framebuffer_stencil()
+{
+	// no stencil support, no-op
+}
+
+r4::vector2<uint32_t> context::to_window_coords(const ruis::vec2& point) const
+{
+	// the same transform as the OpenGL renderer: NDC -> window space
+	const auto p = r4::vector2<float>(point.x(), point.y());
+	const auto& v = this->viewport;
+	r4::vector2<uint32_t> result;
+	result.x() = uint32_t(((p.x() + 1.0f) / 2.0f) * v.d.x() + v.p.x());
+	result.y() = uint32_t(((p.y() + 1.0f) / 2.0f) * v.d.y() + v.p.y());
+	return result;
+}
+
+bool context::is_scissor_enabled() const noexcept
+{
+	return this->scissor_enabled;
+}
+
+void context::enable_scissor(bool enable)
+{
+	this->scissor_enabled = enable;
+	if (enable) {
+		this->scissor = this->scissor;
+	}
+}
+
+r4::rectangle<uint32_t> context::get_scissor() const
+{
+	return this->scissor;
+}
+
+void context::set_scissor(const r4::rectangle<uint32_t>& r)
+{
+	this->scissor = r;
+	this->scissor = r;
+}
+
+r4::rectangle<uint32_t> context::get_viewport() const
+{
+	// when rendering into a framebuffer (e.g. render-to-texture / get_render),
+	// the viewport is the framebuffer's dimensions, not the window's viewport.
+	if (this->current_fb != nullptr) {
+		const auto d = this->current_fb->dims();
+		return r4::rectangle<uint32_t>(0, 0, d.x(), d.y());
+	}
+	return this->viewport;
+}
+
+void context::set_viewport(const r4::rectangle<uint32_t>& r)
+{
+	this->viewport = r;
+}
+
+void context::enable_blend(bool enable)
+{
+	this->blend_enabled = enable;
+}
+
+void context::set_blend_func(
+	blend_factor src_color,
+	blend_factor dst_color,
+	blend_factor src_alpha,
+	blend_factor dst_alpha
+)
+{
+	this->blend_src_color = to_vk_blend_factor(src_color);
+	this->blend_dst_color = to_vk_blend_factor(dst_color);
+	this->blend_src_alpha = to_vk_blend_factor(src_alpha);
+	this->blend_dst_alpha = to_vk_blend_factor(dst_alpha);
+}
+
+bool context::is_depth_enabled() const noexcept
+{
+	return this->depth_enabled;
+}
+
+void context::enable_depth(bool enable)
+{
+	this->depth_enabled = enable;
+}
+
+// ===============================
+// = vulkan-specific interface =
+
+uint32_t context::get_blend_key() const
+{
+	// pack the blend state into a 32-bit key
+	auto pack = [](VkBlendFactor f) {
+		return uint32_t(f);
+	};
+	uint32_t key = 0;
+	key |= pack(this->blend_src_color) << 0;
+	key |= pack(this->blend_dst_color) << 5;
+	key |= pack(this->blend_src_alpha) << 10;
+	key |= pack(this->blend_dst_alpha) << 15;
+	key |= (this->blend_enabled ? 1u : 0u) << 20;
+	return key;
+}
+
+VkRenderPass context::get_current_render_pass(bool has_depth, bool clear) const
+{
+	if (this->current_fb == nullptr) {
+		// screen
+		return clear ? this->swapchain_render_pass_clear : this->swapchain_render_pass_load;
+	}
+	if (has_depth) {
+		return clear ? this->fbo_render_pass_clear_depth : this->fbo_render_pass_load_depth;
+	}
+	return clear ? this->fbo_render_pass_clear_nod : this->fbo_render_pass_load_nod;
+}
+
+void context::ensure_frame_began()
+{
+	if (this->frame_begun) {
+		return;
+	}
+
+	// wait for the previous frame to complete
+	{
+		// only wait if a frame has been submitted before
+		if (this->frame_submitted) {
+			const auto wait_res = vkWaitForFences(this->device, 1, &this->frame_fence, VK_TRUE, 2000000000ull); // 2s timeout
+			if (wait_res == VK_SUCCESS) {
+				vkResetFences(this->device, 1, &this->frame_fence);
+			}
+			// if the wait timed out, the frame is still in progress; proceed anyway
+			// (the command buffer reset will implicitly wait for the GPU)
+			this->frame_submitted = false;
+		}
+	}
+
+	// reset and begin the command buffer
+	VU_CHECK(vkResetCommandBuffer(this->command_buffer, 0));
+	const auto begin_info = VkCommandBufferBeginInfo{
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+		.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+	};
+	VU_CHECK(vkBeginCommandBuffer(this->command_buffer, &begin_info));
+
+	this->frame_begun = true;
+	this->frame_has_swapchain = false;
+	this->current_swapchain_image = -1;
+	// reset the UBO ring index: the previous frame's GPU work is complete (we waited
+	// on the frame fence above), so its UBO slots are safe to reuse
+	this->ubo_ring_index = 0;
+	// free any leftover descriptor sets from a skipped frame
+	this->free_descriptor_sets();
+	this->frame_descriptor_sets.clear();
+}
+
+void context::allocate_ubo_slot()
+{
+	const auto buffer_info = VkBufferCreateInfo{
+		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+		.size = sizeof(draw_uniforms),
+		.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+		.sharingMode = VK_SHARING_MODE_EXCLUSIVE
+	};
+	VkBuffer buf = VK_NULL_HANDLE;
+	{ VkBuffer _vu_tmp{}; VU_CHECK(vkCreateBuffer(this->device, &buffer_info, nullptr, &_vu_tmp)); buf = _vu_tmp; }
+	VkMemoryRequirements mem_reqs{};
+	vkGetBufferMemoryRequirements(this->device, buf, &mem_reqs);
+	const auto alloc_info = VkMemoryAllocateInfo{
+		.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+		.allocationSize = mem_reqs.size,
+		.memoryTypeIndex = pick_host_visible_memory_type(this->physical_device, mem_reqs)
+	};
+	VkDeviceMemory mem = VK_NULL_HANDLE;
+	VU_CHECK(vkAllocateMemory(this->device, &alloc_info, nullptr, &mem));
+	VU_CHECK(vkBindBufferMemory(this->device, buf, mem, 0));
+	void* mapped = nullptr;
+	VU_CHECK(vkMapMemory(this->device, mem, 0, sizeof(draw_uniforms), 0, &mapped));
+	this->ubo_ring.push_back(buf);
+	this->ubo_ring_mem.push_back(mem);
+	this->ubo_ring_map.push_back(mapped);
+}
+
+VkBuffer context::update_uniforms(const r4::matrix4<float>& m, const r4::vector4<float>& color)
+{
+	// take the next slot in the UBO ring (growing it if needed) and write the uniforms.
+	// each draw gets its own slot so the GPU reads the right value at execution time.
+	const size_t idx = this->ubo_ring_index++;
+	if (idx >= this->ubo_ring.size()) {
+		this->allocate_ubo_slot();
+	}
+	const size_t slot = idx < this->ubo_ring.size() ? idx : (this->ubo_ring.size() - 1);
+	auto* u = static_cast<draw_uniforms*>(this->ubo_ring_map[slot]);
+	write_matrix_column_major(u->matrix, m);
+	fprintf(stderr, "[VU-MAT] m00=%.2f m01=%.2f m03=%.2f | m10=%.2f m11=%.2f m13=%.2f | m30=%.2f m31=%.2f m33=%.2f\n",
+		m[0][0], m[0][1], m[0][3], m[1][0], m[1][1], m[1][3], m[3][0], m[3][1], m[3][3]);
+	u->color[0] = color.x();
+	u->color[1] = color.y();
+	u->color[2] = color.z();
+	u->color[3] = color.w();
+	return this->ubo_ring[slot];
+}
+
+VkDescriptorSet context::allocate_descriptor_set(bool textured, VkBuffer ubo_buffer, VkImageView image_view, VkSampler sampler)
+{
+	const auto dsl = textured ? this->dsl_with_tex : this->dsl_no_tex;
+
+	VkDescriptorSet set = VK_NULL_HANDLE;
+	const auto alloc_info = VkDescriptorSetAllocateInfo{
+		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+	.descriptorPool = this->descriptor_pool,
+	.descriptorSetCount = 1,
+		.pSetLayouts = &dsl
+	};
+	VU_CHECK(vkAllocateDescriptorSets(this->device, &alloc_info, &set));
+	this->frame_descriptor_sets.push_back(set);
+
+	std::vector<VkWriteDescriptorSet> writes;
+
+	// binding 0: UBO (the per-draw slot written by update_uniforms)
+	const auto buffer_info = VkDescriptorBufferInfo{
+		.buffer = ubo_buffer,
+		.offset = 0,
+		.range = sizeof(draw_uniforms)
+	};
+	const auto ubo_write = VkWriteDescriptorSet{
+		.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		.dstSet = set,
+		.dstBinding = 0,
+		.dstArrayElement = 0,
+		.descriptorCount = 1,
+		.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+		.pImageInfo = nullptr,
+		.pBufferInfo = &buffer_info
+	};
+	writes.push_back(ubo_write);
+
+	if (textured) {
+		const auto image_info = VkDescriptorImageInfo{
+			.sampler = sampler,
+			.imageView = image_view,
+			.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+		};
+		const auto tex_write = VkWriteDescriptorSet{
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.dstSet = set,
+			.dstBinding = 1,
+			.dstArrayElement = 0,
+			.descriptorCount = 1,
+			.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			.pImageInfo = &image_info,
+			.pBufferInfo = nullptr
+		};
+		writes.push_back(tex_write);
+	}
+
+	vkUpdateDescriptorSets(this->device, uint32_t(writes.size()), writes.data(), 0, nullptr);
+	return set;
+}
+
+void context::draw_indexed(VkPipeline pipeline, VkPipelineLayout layout, const ruis::render::vertex_array& va, VkDescriptorSet descriptor_set)
+{
+	// skip drawing if the viewport is zero-sized (e.g. resource loader context)
+	const auto vp = this->get_viewport();
+	if (vp.d.x() == 0 || vp.d.y() == 0) {
+		return;
+	}
+
+	// if no render pass is in progress, begin one
+	if (!this->render_pass_in_progress) {
+		this->begin_render_pass_internal(this->depth_enabled);
+	}
+
+	vkCmdBindPipeline(this->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+	vkCmdBindDescriptorSets(
+		this->command_buffer,
+		VK_PIPELINE_BIND_POINT_GRAPHICS,
+		layout,
+		0,
+		1,
+		&descriptor_set,
+		0,
+		nullptr
+	);
+
+	// set the dynamic viewport and scissor.
+	// In Vulkan the top-left corner of the viewport is at the top-left corner of
+	// the window and the y-axis points down (positive height), which matches the
+	// framework's coordinate convention (y down).
+	const auto viewport_vk = VkViewport{
+		.x = float(vp.p.x()),
+		.y = float(vp.p.y()),
+		.width = float(vp.d.x()),
+		.height = float(vp.d.y()),
+		.minDepth = 0.0f,
+		.maxDepth = 1.0f
+	};
+	vkCmdSetViewport(this->command_buffer, 0, 1, &viewport_vk);
+
+	// The scissor rectangle is in window-system coordinates (origin top-left, y
+	// down), which is the same coordinate space as the viewport. No flip needed.
+	VkRect2D scissor{};
+	if (this->scissor_enabled) {
+		const auto& s = this->scissor;
+		scissor = VkRect2D{
+			.offset = {int32_t(s.p.x()), int32_t(s.p.y())},
+		 .extent = {uint32_t(s.d.x()), uint32_t(s.d.y())}
+		};
+	} else {
+		// use the effective viewport size (framebuffer dims when rendering to a texture)
+		const auto evp = this->get_viewport();
+		scissor = VkRect2D{
+			.offset = {0, 0},
+			.extent = {evp.d.x(), evp.d.y()}
+		};
+	}
+	vkCmdSetScissor(this->command_buffer, 0, 1, &scissor);
+
+	// bind the vertex buffers
+	std::vector<VkBuffer> buffers;
+	std::vector<VkDeviceSize> offsets;
+	for (const auto& b : va.buffers) {
+		// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the buffer is a vulkan vertex_buffer")
+		const auto& vkb = static_cast<const vertex_buffer&>(b.get());
+		buffers.push_back(vkb.buffer);
+		offsets.push_back(0);
+	}
+	if (!buffers.empty()) {
+		vkCmdBindVertexBuffers(this->command_buffer, 0, uint32_t(buffers.size()), buffers.data(), offsets.data());
+	}
+
+	// bind the index buffer and draw
+	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the indices is a vulkan index_buffer")
+	const auto& vk_indices = static_cast<const index_buffer&>(va.indices.get());
+	vkCmdBindIndexBuffer(this->command_buffer, vk_indices.buffer, 0, vk_indices.index_type);
+	vkCmdDrawIndexed(this->command_buffer, uint32_t(vk_indices.elements_count), 1, 0, 0, 0);
+}
+
+void context::one_shot(std::function<void(VkCommandBuffer)> cmd)
+{
+	// wait for all previously submitted work on the queue to complete. vkQueueWaitIdle is
+	// used instead of vkWaitForFences because the AMD driver does not respect the
+	// timeout parameter of vkWaitForFences, which deadlocks when waiting for a fence
+	// that was never submitted (e.g. the first call).
+	vkQueueWaitIdle(this->queue);
+
+	VU_CHECK(vkResetCommandBuffer(this->one_shot_command_buffer, 0));
+	const auto begin_info = VkCommandBufferBeginInfo{
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+		.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+	};
+	VU_CHECK(vkBeginCommandBuffer(this->one_shot_command_buffer, &begin_info));
+
+	cmd(this->one_shot_command_buffer);
+
+	VU_CHECK(vkEndCommandBuffer(this->one_shot_command_buffer));
+
+	const auto submit_info = VkSubmitInfo{
+		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+		.waitSemaphoreCount = 0,
+		.pWaitSemaphores = nullptr,
+		.commandBufferCount = 1,
+		.pCommandBuffers = &this->one_shot_command_buffer,
+		.signalSemaphoreCount = 0,
+		.pSignalSemaphores = nullptr
+	};
+	VU_CHECK(vkQueueSubmit(this->queue, 1, &submit_info, nullptr));
+
+	// wait for the command buffer to complete, so the caller can safely use the
+	// uploaded resources right away (e.g. sample the texture in the current frame)
+	vkQueueWaitIdle(this->queue);
+}
+
+void context::ensure_textures_uploaded()
+{
+	if (this->textures_uploaded) {
+		return;
+	}
+	
+	// find textures that need uploading
+	std::vector<texture_2d*> pending;
+	for (auto* tex : this->all_textures) {
+		if (!tex->uploaded && !tex->deferred_data.empty()) {
+			pending.push_back(tex);
+		}
+	}
+	
+	if (pending.empty()) {
+		// mark all as uploaded (they were empty)
+		for (auto* tex : this->all_textures) {
+			if (!tex->uploaded && tex->deferred_data.empty()) {
+				tex->uploaded = true;
+			}
+		}
+		this->textures_uploaded = true;
+		return;
+	}
+	
+	// calculate total staging size
+	VkDeviceSize total_size = 0;
+	for (auto* tex : pending) {
+		total_size += tex->staging_size();
+	}
+	
+	if (total_size == 0) {
+		this->textures_uploaded = true;
+		return;
+	}
+	
+	// create a single staging buffer for all textures
+	VkBuffer staging_buffer = VK_NULL_HANDLE;
+	VkDeviceMemory staging_memory = VK_NULL_HANDLE;
+	{
+		const auto buffer_info = VkBufferCreateInfo{
+			.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+			.size = total_size,
+			.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			.sharingMode = VK_SHARING_MODE_EXCLUSIVE
+		};
+		VU_CHECK(vkCreateBuffer(this->device, &buffer_info, nullptr, &staging_buffer));
+		
+		VkMemoryRequirements mem_reqs{};
+		vkGetBufferMemoryRequirements(this->device, staging_buffer, &mem_reqs);
+		
+		VkPhysicalDeviceMemoryProperties props{};
+		vkGetPhysicalDeviceMemoryProperties(this->physical_device, &props);
+		
+		const auto alloc_info = VkMemoryAllocateInfo{
+			.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+			.allocationSize = mem_reqs.size,
+			.memoryTypeIndex = pick_host_visible_memory_type(this->physical_device, mem_reqs)
+		};
+		VU_CHECK(vkAllocateMemory(this->device, &alloc_info, nullptr, &staging_memory));
+		VU_CHECK(vkBindBufferMemory(this->device, staging_buffer, staging_memory, 0));
+	}
+	
+	// copy all texture data into the staging buffer
+	void* mapped = nullptr;
+	VU_CHECK(vkMapMemory(this->device, staging_memory, 0, total_size, 0, &mapped));
+	VkDeviceSize offset = 0;
+	for (auto* tex : pending) {
+		const auto sz = tex->staging_size();
+		std::memcpy(static_cast<uint8_t*>(mapped) + offset, tex->deferred_data.data(), sz);
+		offset += sz;
+	}
+	vkUnmapMemory(this->device, staging_memory);
+	
+	// record all upload commands into a single one-shot command buffer
+	VkDeviceSize cmd_offset = 0;
+	this->one_shot([&](VkCommandBuffer cmd) {
+		for (auto* tex : pending) {
+			const auto sz = tex->staging_size();
+			tex->record_upload_commands(cmd, staging_buffer, cmd_offset);
+			cmd_offset += sz;
+		}
+	});
+	
+	// clean up
+	vkFreeMemory(this->device, staging_memory, nullptr);
+	vkDestroyBuffer(this->device, staging_buffer, nullptr);
+	
+	// mark all as uploaded
+	for (auto* tex : pending) {
+		tex->deferred_data.clear();
+		tex->uploaded = true;
+	}
+	for (auto* tex : this->all_textures) {
+		if (!tex->uploaded) {
+			tex->uploaded = true;
+		}
+	}
+	this->textures_uploaded = true;
+}
+
+rasterimage::image_variant context::readback_framebuffer_color(const ruis::render::frame_buffer& fb)
+{
+	const auto& vulkan_fb = static_cast<const frame_buffer&>(fb);
+	const auto& color = vulkan_fb.vulkan_color();
+
+	const uint32_t w = uint32_t(color.dims().x());
+	const uint32_t h = uint32_t(color.dims().y());
+	const size_t row_bytes = size_t(w) * 4; // RGBA8
+	const VkDeviceSize total_bytes = row_bytes * h;
+
+	// create a host-visible staging buffer for the readback
+	VkBuffer staging_buffer = VK_NULL_HANDLE;
+	VkDeviceMemory staging_memory = VK_NULL_HANDLE;
+	{
+		const auto buffer_info = VkBufferCreateInfo{
+			.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+			.size = total_bytes,
+			.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			.sharingMode = VK_SHARING_MODE_EXCLUSIVE
+		};
+		{ VkBuffer _vu_tmp_staging{}; VU_CHECK(vkCreateBuffer(this->device, &buffer_info, nullptr, &_vu_tmp_staging)); staging_buffer = _vu_tmp_staging; }
+		VkMemoryRequirements mem_reqs{};
+		vkGetBufferMemoryRequirements(this->device, staging_buffer, &mem_reqs);
+		VkPhysicalDeviceMemoryProperties props{};
+		vkGetPhysicalDeviceMemoryProperties(this->physical_device, &props);
+		VkMemoryAllocateInfo alloc_info{};
+		alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		alloc_info.allocationSize = mem_reqs.size;
+		for (uint32_t i = 0; i < props.memoryTypeCount; ++i) {
+			if ((mem_reqs.memoryTypeBits & (1 << i)) &&
+				(props.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
+				alloc_info.memoryTypeIndex = i;
+				break;
+			}
+		}
+		VU_CHECK(vkAllocateMemory(this->device, &alloc_info, nullptr, &staging_memory));
+		VU_CHECK(vkBindBufferMemory(this->device, staging_buffer, staging_memory, 0));
+	}
+
+	// append the readback to the frame's command buffer (the FBO render was recorded there)
+	// ensure the previous frame is complete before beginning a new one
+	if (this->frame_submitted) {
+		const auto wait_res = vkWaitForFences(this->device, 1, &this->frame_fence, VK_TRUE, 2000000000ull); // 2s timeout
+		if (wait_res != VK_SUCCESS) {
+			// the previous frame is not complete; skip the readback
+			throw std::runtime_error("readback: previous frame not complete");
+		}
+		vkResetFences(this->device, 1, &this->frame_fence);
+		this->frame_submitted = false;
+	}
+	this->ensure_frame_began();
+	{
+		const auto image_barrier = VkImageMemoryBarrier{
+			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+			.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+			.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+			.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+			.image = color.image,
+			.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
+		};
+		vkCmdPipelineBarrier(
+			this->command_buffer,
+			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+			VK_PIPELINE_STAGE_TRANSFER_BIT,
+			0,
+			0, nullptr,
+			0, nullptr,
+			1, &image_barrier
+		);
+
+		const auto region = VkBufferImageCopy{
+			.bufferOffset = 0,
+			.bufferRowLength = 0, // 0 means tightly packed (use image width in texels)
+			.bufferImageHeight = h,
+			.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+			.imageOffset = {0, 0, 0},
+			.imageExtent = {w, h, 1}
+		};
+		vkCmdCopyImageToBuffer(
+			this->command_buffer, //
+			color.image,
+			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			staging_buffer,
+			1,
+			&region
+		);
+	}
+
+	// submit the readback and wait for it to complete
+	{
+		const auto submit_info = VkSubmitInfo{
+			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+			.waitSemaphoreCount = 0,
+			.pWaitSemaphores = nullptr,
+			.pWaitDstStageMask = nullptr,
+			.commandBufferCount = 1,
+			.pCommandBuffers = &this->command_buffer,
+			.signalSemaphoreCount = 0,
+			.pSignalSemaphores = nullptr
+		};
+		VU_CHECK(vkEndCommandBuffer(this->command_buffer));
+		VU_CHECK(vkQueueSubmit(this->queue, 1, &submit_info, VK_NULL_HANDLE));
+		// wait for the GPU to finish using vkQueueWaitIdle (works on AMD driver)
+		VU_CHECK(vkQueueWaitIdle(this->queue));
+		this->frame_submitted = false;
+		this->frame_begun = false;
+		this->frame_has_swapchain = false;
+		this->current_swapchain_image = -1;
+		this->free_descriptor_sets();
+		this->frame_descriptor_sets.clear();
+	}
+
+	// read the data back
+	std::vector<uint8_t> buf(total_bytes);
+	void* mapped = nullptr;
+	VU_CHECK(vkMapMemory(this->device, staging_memory, 0, total_bytes, 0, &mapped));
+	std::memcpy(buf.data(), mapped, total_bytes);
+	vkUnmapMemory(this->device, staging_memory);
+
+	vkDestroyBuffer(this->device, staging_buffer, nullptr);
+	vkFreeMemory(this->device, staging_memory, nullptr);
+
+	// The Vulkan color attachment is stored top-to-bottom (row 0 = top), which is
+	// already the conventional top-down order, so no flip is needed.
+	auto im = rasterimage::image<uint8_t, 4>::make(r4::vector2<uint32_t>(w, h), buf.data());
+	return {std::move(im)};
+}
+
+void context::present()
+{
+	// recreate the swapchain if the window was resized
+	this->ensure_swapchain_valid();
+
+	// end the render pass if in progress
+	if (this->render_pass_in_progress) {
+		this->end_render_pass_internal();
+	}
+
+	if (!this->frame_begun) {
+		// nothing was rendered this frame; submit a clear frame so the window shows the clear color
+		this->ensure_frame_began();
+		this->pending_clear = true;
+		this->begin_render_pass_internal(this->depth_enabled);
+		this->end_render_pass_internal();
+	}
+
+	this->submit_frame(true);
+}
+
+// ===============================
+// = pipeline management =
+
+VkPipeline context::get_or_create_pipeline(
+	shader_kind kind, //
+	bool textured,
+	VkPrimitiveTopology topology,
+	const void* vertex_spirv,
+	size_t vertex_spirv_size,
+	const void* fragment_spirv,
+	size_t fragment_spirv_size
+)
+{
+	// determine the render pass this draw will use (the pipeline is tied to it)
+	VkRenderPass render_pass;
+	if (this->render_pass_in_progress) {
+		render_pass = this->active_render_pass;
+	} else {
+		render_pass = this->get_current_render_pass(this->depth_enabled, this->pending_clear);
+	}
+
+	const auto key = pipeline_key{
+		.shader_kind = uint32_t(kind),
+		.blend_key = this->get_blend_key(),
+		.depth_enabled = this->depth_enabled ? 1u : 0u,
+		.textured = textured ? 1u : 0u,
+		.topology = uint32_t(topology),
+		.render_pass = render_pass
+	};
+
+	{
+		auto it = this->pipelines.find(key);
+		if (it != this->pipelines.end()) {
+			return it->second;
+		}
+	}
+
+	const auto pipeline =
+		this->build_pipeline(key, shader_has_a1(kind), vertex_spirv, vertex_spirv_size, fragment_spirv, fragment_spirv_size);
+	this->pipelines[key] = pipeline;
+	return pipeline;
+}
+
+VkPipeline context::build_pipeline(
+	const pipeline_key& key, //
+	bool has_a1,
+	const void* vertex_spirv,
+	size_t vertex_spirv_size,
+	const void* fragment_spirv,
+	size_t fragment_spirv_size
+) const
+{
+	// ---- shader stages ----
+	const auto vertex_stage = VkPipelineShaderStageCreateInfo{
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+		.stage = VK_SHADER_STAGE_VERTEX_BIT,
+		.module = this->create_shader_module(vertex_spirv, vertex_spirv_size),
+		.pName = "main"
+	};
+	const auto fragment_stage = VkPipelineShaderStageCreateInfo{
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+		.stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+		.module = this->create_shader_module(fragment_spirv, fragment_spirv_size),
+		.pName = "main"
+	};
+	const VkPipelineShaderStageCreateInfo stages[] = {vertex_stage, fragment_stage};
+
+	// ---- vertex input layout ----
+	std::vector<VkVertexInputBindingDescription> bindings;
+	std::vector<VkVertexInputAttributeDescription> attributes;
+	bindings.push_back(VkVertexInputBindingDescription{
+		.binding = 0,
+		.stride = 16,
+		.inputRate = VK_VERTEX_INPUT_RATE_VERTEX
+	});
+	attributes.push_back(VkVertexInputAttributeDescription{
+		.location = 0,
+		.binding = 0,
+		.format = VK_FORMAT_R32G32B32A32_SFLOAT,
+		.offset = 0
+	});
+	if (has_a1) {
+		bindings.push_back(VkVertexInputBindingDescription{
+			.binding = 1,
+			.stride = 16,
+			.inputRate = VK_VERTEX_INPUT_RATE_VERTEX
+		});
+		attributes.push_back(VkVertexInputAttributeDescription{
+			.location = 1,
+			.binding = 1,
+			.format = VK_FORMAT_R32G32B32A32_SFLOAT,
+			.offset = 0
+		});
+	}
+	const auto vertex_input_info = VkPipelineVertexInputStateCreateInfo{
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+		.vertexBindingDescriptionCount = uint32_t(bindings.size()),
+		.pVertexBindingDescriptions = bindings.data(),
+		.vertexAttributeDescriptionCount = uint32_t(attributes.size()),
+		.pVertexAttributeDescriptions = attributes.data()
+	};
+
+	// ---- input assembly ----
+	const auto input_assembly = VkPipelineInputAssemblyStateCreateInfo{
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+		// the topology must match the VAO's rendering mode, which is baked into
+		// the pipeline key (the VAO cannot be queried from the key)
+		.topology = VkPrimitiveTopology(key.topology),
+		.primitiveRestartEnable = VK_FALSE
+	};
+
+	// ---- rasterization ----
+	const auto rasterization = VkPipelineRasterizationStateCreateInfo{
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+		.depthClampEnable = VK_FALSE,
+		.rasterizerDiscardEnable = VK_FALSE,
+		.polygonMode = VK_POLYGON_MODE_FILL,
+		// The initial_matrix does NOT flip y (the Vulkan viewport with positive
+		// height maps NDC (-1,-1) to the top-left, so the framework's y-down is
+		// preserved all the way to the framebuffer). This keeps the window-space
+		// winding counter-clockwise for front-facing quads. frontFace defaults to
+		// CCW (the Vulkan zero value), matching OpenGL, so only the cull mode
+		// needs to be set: cull the back (CW) face.
+		.cullMode = VK_CULL_MODE_BACK_BIT,
+		.depthBiasEnable = VK_FALSE,
+		.lineWidth = 1.0f
+	};
+
+	// ---- multiviewport ----
+	const auto viewport_state = VkPipelineViewportStateCreateInfo{
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+		.viewportCount = 1,
+		.scissorCount = 1
+	};
+
+	// ---- color blend ----
+	VkPipelineColorBlendAttachmentState color_blend{};
+	if (this->blend_enabled) {
+		color_blend.blendEnable = VK_TRUE;
+		color_blend.srcColorBlendFactor = this->blend_src_color;
+		color_blend.dstColorBlendFactor = this->blend_dst_color;
+		color_blend.colorBlendOp = VK_BLEND_OP_ADD;
+		color_blend.srcAlphaBlendFactor = this->blend_src_alpha;
+		color_blend.dstAlphaBlendFactor = this->blend_dst_alpha;
+		color_blend.alphaBlendOp = VK_BLEND_OP_ADD;
+	} else {
+		color_blend.blendEnable = VK_FALSE;
+		color_blend.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+		color_blend.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+		color_blend.colorBlendOp = VK_BLEND_OP_ADD;
+		color_blend.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+		color_blend.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+		color_blend.alphaBlendOp = VK_BLEND_OP_ADD;
+	}
+	color_blend.colorWriteMask =
+		VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+	const auto color_blend_state = VkPipelineColorBlendStateCreateInfo{
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+		.logicOpEnable = VK_FALSE,
+		.logicOp = VK_LOGIC_OP_COPY,
+		.attachmentCount = 1,
+		.pAttachments = &color_blend,
+		.blendConstants = {1.0f, 1.0f, 1.0f, 1.0f}
+	};
+
+	// ---- depth / stencil ----
+	const auto depth_stencil = VkPipelineDepthStencilStateCreateInfo{
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+		.depthTestEnable = this->depth_enabled ? VK_TRUE : VK_FALSE,
+		.depthWriteEnable = this->depth_enabled ? VK_TRUE : VK_FALSE,
+		.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
+		.depthBoundsTestEnable = VK_FALSE,
+		.stencilTestEnable = VK_FALSE
+	};
+
+	// ---- dynamic state ----
+	const VkDynamicState dynamic_states[] = {
+		VK_DYNAMIC_STATE_VIEWPORT,
+		VK_DYNAMIC_STATE_SCISSOR
+	};
+	const auto dynamic_state = VkPipelineDynamicStateCreateInfo{
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+		.dynamicStateCount = 2,
+		.pDynamicStates = dynamic_states
+	};
+
+	// ---- layout ----
+	const auto layout = key.textured ? this->pipeline_layout_with_tex : this->pipeline_layout_no_tex;
+
+	// ---- multisample state ----
+	const auto multisample = VkPipelineMultisampleStateCreateInfo{
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+		.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT
+	};
+
+	// ---- pipeline ----
+	const auto info = VkGraphicsPipelineCreateInfo{
+		.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+		.stageCount = 2,
+		.pStages = stages,
+		.pVertexInputState = &vertex_input_info,
+		.pInputAssemblyState = &input_assembly,
+		.pTessellationState = nullptr,
+		.pViewportState = &viewport_state,
+		.pRasterizationState = &rasterization,
+		.pMultisampleState = &multisample,
+		.pDepthStencilState = &depth_stencil,
+		.pColorBlendState = &color_blend_state,
+		.pDynamicState = &dynamic_state,
+		.layout = layout,
+		.renderPass = key.render_pass,
+		.subpass = 0
+	};
+
+	VkPipeline pipeline = VK_NULL_HANDLE;
+	VU_CHECK(vkCreateGraphicsPipelines(this->device, this->pipeline_cache, 1, &info, nullptr, &pipeline));
+
+	// destroy the shader modules (they are now baked into the pipeline)
+	vkDestroyShaderModule(this->device, vertex_stage.module, nullptr);
+	vkDestroyShaderModule(this->device, fragment_stage.module, nullptr);
+
+	return pipeline;
+}
+
+// ===============================
+// = render pass management =
+
+void context::begin_render_pass_internal(bool has_depth)
+{
+	// the swapchain render passes always have a depth attachment, so force depth when rendering to screen
+	if (this->current_fb == nullptr) {
+		has_depth = true;
+	}
+	// ensure all textures are uploaded before the first render pass
+	this->ensure_textures_uploaded();
+
+	// determine the render pass (clear or load)
+	const bool clear = this->pending_clear;
+	const auto render_pass = this->get_current_render_pass(has_depth, clear);
+
+	// acquire the swapchain image if we're rendering to the screen
+	VkImageView color_view = VK_NULL_HANDLE;
+	VkImage color_image = VK_NULL_HANDLE;
+	VkDeviceSize width = 0;
+	VkDeviceSize height = 0;
+
+	if (this->current_fb == nullptr) {
+		// screen
+		if (!this->frame_has_swapchain) {
+			uint32_t index = 0;
+			const auto res = vkAcquireNextImageKHR(
+				this->device, //
+				this->swapchain,
+				2000000000ull, // 2s timeout
+				this->image_available_sem,
+				VK_NULL_HANDLE,
+				&index
+			);
+			if (res != VK_SUCCESS && res != VK_TIMEOUT && res != VK_SUBOPTIMAL_KHR) {
+				throw std::runtime_error("vkAcquireNextImageKHR failed: " + std::to_string(int(res)));
+			}
+			if (res == VK_TIMEOUT) {
+				this->frame_begun = false;
+				this->render_pass_in_progress = false;
+				this->active_render_pass = VK_NULL_HANDLE;
+				this->active_has_depth = false;
+				this->pending_clear = false;
+				return;
+			}
+			this->current_swapchain_image = int(index);
+			this->frame_has_swapchain = true;
+		}
+		color_image = this->swapchain_images[uint32_t(this->current_swapchain_image)];
+		color_view = this->swapchain_image_views[uint32_t(this->current_swapchain_image)];
+		width = this->window_dims.x();
+		height = this->window_dims.y();
+	} else {
+		// FBO
+		const auto& vulkan_fb = static_cast<const frame_buffer&>(*this->current_fb);
+		color_view = vulkan_fb.vulkan_color().image_view;
+		color_image = vulkan_fb.vulkan_color().image;
+		width = uint32_t(vulkan_fb.vulkan_color().dims().x());
+		height = uint32_t(vulkan_fb.vulkan_color().dims().y());
+	}
+
+	// set up the render pass begin info
+	std::vector<VkImageView> attachments;
+	attachments.push_back(color_view);
+	VkImageView depth_view = VK_NULL_HANDLE;
+	if (has_depth) {
+		if (this->current_fb == nullptr) {
+			depth_view = this->depth_image_view;
+		} else {
+			const auto* vulkan_depth = static_cast<const frame_buffer&>(*this->current_fb).vulkan_depth();
+			depth_view = vulkan_depth ? vulkan_depth->image_view : VK_NULL_HANDLE;
+		}
+		attachments.push_back(depth_view);
+	}
+
+	// clear values: color at attachment 0, depth at attachment 1
+	std::vector<VkClearValue> ordered_clear_values;
+	ordered_clear_values.push_back(VkClearValue{
+		.color = {
+			.float32 = {0.0f, 0.0f, 0.0f, 1.0f}
+		}
+	});
+	if (has_depth) {
+		ordered_clear_values.push_back(VkClearValue{
+			.depthStencil = {1.0f, 0}
+		});
+	}
+
+	const auto render_area = VkRect2D{
+		.offset = {0, 0},
+		.extent = {uint32_t(width), uint32_t(height)}
+	};
+
+	// determine the framebuffer handle
+	VkFramebuffer framebuffer = VK_NULL_HANDLE;
+	if (this->current_fb == nullptr) {
+		if (this->current_swapchain_image < 0 || this->current_swapchain_image >= int(this->swapchain_framebuffers.size())) {
+			throw std::runtime_error("begin_render_pass_internal: invalid swapchain image index " + std::to_string(this->current_swapchain_image));
+		}
+		framebuffer = this->swapchain_framebuffers[uint32_t(this->current_swapchain_image)];
+	} else {
+		const auto& vulkan_fb = static_cast<const frame_buffer&>(*this->current_fb);
+		framebuffer = vulkan_fb.vulkan_framebuffer();
+	}
+
+	const auto begin_info = VkRenderPassBeginInfo{
+		.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+		.renderPass = render_pass,
+		.framebuffer = framebuffer,
+		.renderArea = render_area,
+		.clearValueCount = uint32_t(ordered_clear_values.size()),
+		.pClearValues = ordered_clear_values.data()
+	};
+
+	// transition the color attachment to COLOR_ATTACHMENT_OPTIMAL
+	// NOTE: do NOT use pipeline barriers on swapchain images (they are not bound to VkDeviceMemory)
+	// The render pass handles the layout transition via initialLayout
+	if (this->current_fb != nullptr) {
+		const auto color_barrier = VkImageMemoryBarrier{
+			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+			.srcAccessMask = 0,
+			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+			.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+			.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+			.image = color_image,
+			.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
+		};
+		vkCmdPipelineBarrier(
+			this->command_buffer,
+			VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+			0,
+			0, nullptr,
+			0, nullptr,
+			1, &color_barrier
+		);
+	}
+
+	// transition the depth attachment to DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+	if (has_depth && depth_view != VK_NULL_HANDLE) {
+		VkImage depth_image = VK_NULL_HANDLE;
+		if (this->current_fb == nullptr) {
+			depth_image = this->depth_image;
+		} else {
+			const auto* vulkan_depth = static_cast<const frame_buffer&>(*this->current_fb).vulkan_depth();
+			depth_image = vulkan_depth ? vulkan_depth->image : VK_NULL_HANDLE;
+		}
+		if (depth_image != VK_NULL_HANDLE) {
+			const auto depth_barrier = VkImageMemoryBarrier{
+				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+				.srcAccessMask = 0,
+				.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+				.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+				.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+				.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+				.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+				.image = depth_image,
+				.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1}
+			};
+			vkCmdPipelineBarrier(
+				this->command_buffer,
+				VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+				VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+				0,
+				0, nullptr,
+				0, nullptr,
+				1, &depth_barrier
+			);
+		}
+	}
+
+	vkCmdBeginRenderPass(this->command_buffer, &begin_info, VK_SUBPASS_CONTENTS_INLINE);
+	this->render_pass_in_progress = true;
+	this->active_render_pass = render_pass;
+	this->active_has_depth = has_depth;
+	this->pending_clear = false;
+}
+
+void context::end_render_pass_internal()
+{
+	if (!this->render_pass_in_progress) {
+		return;
+	}
+
+	vkCmdEndRenderPass(this->command_buffer);
+	this->render_pass_in_progress = false;
+}
+
+void context::submit_frame(bool present)
+{
+	if (!this->frame_begun) {
+		// no frame was begun (e.g. swapchain image acquisition failed), nothing to submit
+		return;
+	}
+	// end the command buffer
+	{
+		VU_CHECK(vkEndCommandBuffer(this->command_buffer));
+	}
+
+	// build the submit info
+	std::vector<VkSemaphore> wait_sems;
+	std::vector<VkPipelineStageFlags> wait_stages;
+	if (this->frame_has_swapchain) {
+		wait_sems.push_back(this->image_available_sem);
+		wait_stages.push_back(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+	}
+
+	const auto submit_info = VkSubmitInfo{
+		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+		.waitSemaphoreCount = uint32_t(wait_sems.size()),
+		.pWaitSemaphores = wait_sems.data(),
+		.pWaitDstStageMask = wait_stages.data(),
+		.commandBufferCount = 1,
+		.pCommandBuffers = &this->command_buffer,
+		.signalSemaphoreCount = present ? 1u : 0u,
+		.pSignalSemaphores = present ? &this->render_finished_sem : nullptr
+	};
+	VU_CHECK(vkQueueSubmit(this->queue, 1, &submit_info, this->frame_fence));
+	this->frame_submitted = true;
+
+	if (present) {
+		// present the swapchain image
+		const uint32_t present_image_index = uint32_t(this->current_swapchain_image);
+		const auto present_info = VkPresentInfoKHR{
+			.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+			.waitSemaphoreCount = 1,
+			.pWaitSemaphores = &this->render_finished_sem,
+			.swapchainCount = 1,
+			.pSwapchains = &this->swapchain,
+			.pImageIndices = &present_image_index,
+			.pResults = nullptr
+		};
+		const auto pres_res = vkQueuePresentKHR(this->queue, &present_info);
+		if (pres_res == VK_SUBOPTIMAL_KHR) {
+			// the swapchain is no longer optimal; it will be recreated on the next frame
+			this->swapchain_suboptimal = true;
+		}
+	}
+
+	// wait for the frame to complete using vkQueueWaitIdle (safest for AMD driver)
+	{
+		VU_CHECK(vkQueueWaitIdle(this->queue));
+		VU_CHECK(vkWaitForFences(this->device, 1, &this->frame_fence, VK_TRUE, 1000000000ull)); // 1s timeout
+		vkResetFences(this->device, 1, &this->frame_fence);
+		this->frame_submitted = false;
+	}
+
+	// free the descriptor sets allocated this frame
+	this->free_descriptor_sets();
+	this->frame_descriptor_sets.clear();
+
+	// reset the frame state
+	this->frame_begun = false;
+	this->frame_has_swapchain = false;
+	this->current_swapchain_image = -1;
+	this->render_pass_in_progress = false;
+	this->active_render_pass = VK_NULL_HANDLE;
+	this->active_has_depth = false;
+	this->pending_clear = false;
+}
+
+void context::free_descriptor_sets()
+{
+	if (this->frame_descriptor_sets.empty()) {
+		return;
+	}
+	vkFreeDescriptorSets(this->device, this->descriptor_pool, uint32_t(this->frame_descriptor_sets.size()), this->frame_descriptor_sets.data());
+}
+
+VkShaderModule context::create_shader_module(const void* spirv, size_t size_words) const
+{
+	const auto* words = static_cast<const uint32_t*>(spirv);
+	const auto info = VkShaderModuleCreateInfo{
+		.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+		.codeSize = size_words * sizeof(uint32_t),
+		.pCode = words
+	};
+	{
+		VkShaderModule _handle{};
+		VU_CHECK(vkCreateShaderModule(this->device, &info, nullptr, &_handle));
+		return _handle;
+	}
+}

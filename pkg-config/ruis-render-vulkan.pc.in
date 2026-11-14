@@ -1,0 +1,9 @@
+Name: ruis-render-vulkan   # human-readable name
+Description: C++ Vulkan renderer for ruis GUI library
+Version: $(version)
+URL: https://github.com/cppfw/ruis-render-vulkan
+Requires:
+Conflicts:
+Libs: -lruis-render-vulkan
+Libs.private:
+Cflags:
