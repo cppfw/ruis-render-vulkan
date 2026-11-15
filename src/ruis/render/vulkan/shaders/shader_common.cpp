@@ -22,7 +22,6 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 #include "shader_common.hpp"
 
 #include <cstdlib>
-#include <cstdio>
 #include <utility>
 
 #include "../context.hpp"
@@ -96,24 +95,6 @@ void vulkan_shader_render(
 
 	const auto descriptor_set =
 		ctx.allocate_descriptor_set(textured, ubo_buffer, texture ? texture->image_view : VK_NULL_HANDLE, texture ? texture->sampler : VK_NULL_HANDLE);
-
-	if (getenv("VU_DEBUG_DRAW") != nullptr) { // NOLINT(concurrency-mt-unsafe)
-		const auto vp = ctx.get_viewport();
-		const float W = float(vp.d.x());
-		const float H = float(vp.d.y());
-		auto ndc2scr = [&](float px, float py) { // NOLINT(concurrency-mt-unsafe)
-			float nx = m[0][0]*px + m[0][1]*py + m[0][3];
-			float ny = m[1][0]*px + m[1][1]*py + m[1][3];
-			return std::make_pair((nx+1)/2*W, (1-ny)/2*H);
-		};
-		auto a = ndc2scr(0,0); auto c = ndc2scr(1,1);
-		const bool sc_en = ctx.is_scissor_enabled();
-		const auto sc = ctx.get_scissor();
-		fprintf(stderr, "[VU-QUAD] W=%d H=%d kind=%d tex=%p fb=%d sciss=%d rect=(%d,%d,%d,%d) TL=(%.0f,%.0f) BR=(%.0f,%.0f)\n", // NOLINT(concurrency-mt-unsafe)
-				int(vp.d.x()), int(vp.d.y()), (int)kind, (void*)texture, ctx.current_fb_debug(), // NOLINT(concurrency-mt-unsafe)
-				int(sc_en), int(sc.p.x()), int(sc.p.y()), int(sc.d.x()), int(sc.d.y()), // NOLINT(concurrency-mt-unsafe)
-				a.first, a.second, c.first, c.second); // NOLINT(concurrency-mt-unsafe)
-	}
 
 	ctx.draw_indexed(pipeline, textured ? ctx.pipeline_layout_with_tex : ctx.pipeline_layout_no_tex, va, descriptor_set);
 }

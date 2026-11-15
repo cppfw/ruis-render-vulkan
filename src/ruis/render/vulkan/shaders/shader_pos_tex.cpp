@@ -41,6 +41,22 @@ void shader_pos_tex::render(
 	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "assert(dynamic_cast) done")
 	const auto& vk_tex = static_cast<const texture_2d&>(tex);
 
+	// textured quads always use alpha blending so that transparent/empty
+	// textures do not overwrite the background
+	{
+		auto& ctx =
+			// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "vulkan context")
+			// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+			const_cast<ruis::render::context&>(ruis::render::context::current());
+		ctx.enable_blend(true);
+		ctx.set_blend_func(
+			ruis::render::context::blend_factor::src_alpha, //
+			ruis::render::context::blend_factor::one_minus_src_alpha, //
+			ruis::render::context::blend_factor::one, //
+			ruis::render::context::blend_factor::one_minus_src_alpha //
+		);
+	}
+
 	vulkan_shader_render(
 		this->ctx_ref, //
 		shader_kind::pos_tex,
@@ -50,7 +66,7 @@ void shader_pos_tex::render(
 		sizeof(spirv_shader_pos_tex_fragment) / sizeof(uint32_t),
 		&vk_tex, //
 		m,
-		r4::vector4<float>(0, 0, 0, 0),
+		r4::vector4<float>(1, 1, 1, 1),
 		va
 	);
 }

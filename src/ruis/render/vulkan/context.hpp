@@ -291,7 +291,6 @@ public:
 	void ensure_textures_uploaded();
 
 	// DEBUG: 0 = screen (swapchain), 1 = offscreen framebuffer
-	int current_fb_debug() const noexcept { return this->current_fb ? 1 : 0; }
 
 private:
 
