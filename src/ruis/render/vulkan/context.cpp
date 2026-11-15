@@ -72,8 +72,11 @@ VkSurfaceFormatKHR pick_surface_format(VkPhysicalDevice phys, VkSurfaceKHR surfa
 	return formats[0];
 }
 
-VkPresentModeKHR pick_present_mode(VkPhysicalDevice phys, VkSurfaceKHR surface)
+VkPresentModeKHR pick_present_mode(VkPhysicalDevice phys, VkSurfaceKHR surface, bool vsync_enabled)
 {
+	if (vsync_enabled) {
+		return VK_PRESENT_MODE_FIFO_KHR; // capped to monitor refresh rate
+	}
 	uint32_t count = 0;
 	vkGetPhysicalDeviceSurfacePresentModesKHR(phys, surface, &count, nullptr);
 	std::vector<VkPresentModeKHR> modes(count);
@@ -81,6 +84,9 @@ VkPresentModeKHR pick_present_mode(VkPhysicalDevice phys, VkSurfaceKHR surface)
 
 	for (const auto m : modes) {
 		if (m == VK_PRESENT_MODE_MAILBOX_KHR) {
+			return m;
+		}
+		if (m == VK_PRESENT_MODE_IMMEDIATE_KHR) {
 			return m;
 		}
 	}
@@ -253,7 +259,9 @@ void context::create_swapchain()
 		image_count = caps.maxImageCount;
 	}
 
-	const auto present_mode = pick_present_mode(this->physical_device, this->surface);
+	const auto vsync_enabled = this->is_vsync_enabled();
+	this->swapchain_vsync = vsync_enabled;
+	const auto present_mode = pick_present_mode(this->physical_device, this->surface, vsync_enabled);
 
 	const uint32_t queue_family = 0;
 
@@ -319,7 +327,10 @@ void context::ensure_swapchain_valid()
 	const uint32_t cur_h = (caps.currentExtent.height != std::numeric_limits<uint32_t>::max()) ? caps.currentExtent.height : this->window_dims.y();
 	const auto w = std::max<uint32_t>(1, cur_w);
 	const auto h = std::max<uint32_t>(1, cur_h);
-	if (w == this->window_dims.x() && h == this->window_dims.y() && !this->swapchain_suboptimal) {
+	// also check if vsync changed (requires swapchain recreation)
+	const auto vsync_now = this->is_vsync_enabled();
+	const bool vsync_changed = (vsync_now != this->swapchain_vsync);
+	if (w == this->window_dims.x() && h == this->window_dims.y() && !this->swapchain_suboptimal && !vsync_changed) {
 		return;
 	}
 	// the window was resized (or the swapchain is suboptimal); wait for the GPU to
