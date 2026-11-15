@@ -109,10 +109,11 @@ void vulkan_shader_render(
 		auto a = ndc2scr(0,0); auto c = ndc2scr(1,1);
 		const bool sc_en = ctx.is_scissor_enabled();
 		const auto sc = ctx.get_scissor();
-		fprintf(stderr, "[VU-QUAD] W=%d H=%d kind=%d tex=%p fb=%d sciss=%d rect=(%d,%d,%d,%d) TL=(%.0f,%.0f) BR=(%.0f,%.0f)\n", // NOLINT(concurrency-mt-unsafe)
+		fprintf(stderr, "[VU-QUAD] W=%d H=%d kind=%d tex=%p fb=%d sciss=%d rect=(%d,%d,%d,%d) TL=(%.0f,%.0f) BR=(%.0f,%.0f) col=(%.3f,%.3f,%.3f,%.3f)\n", // NOLINT(concurrency-mt-unsafe)
 				int(vp.d.x()), int(vp.d.y()), (int)kind, (void*)texture, ctx.current_fb_debug(), // NOLINT(concurrency-mt-unsafe)
 				int(sc_en), int(sc.p.x()), int(sc.p.y()), int(sc.d.x()), int(sc.d.y()), // NOLINT(concurrency-mt-unsafe)
-				a.first, a.second, c.first, c.second); // NOLINT(concurrency-mt-unsafe)
+				a.first, a.second, c.first, c.second, // NOLINT(concurrency-mt-unsafe)
+				color.x(), color.y(), color.z(), color.w()); // NOLINT(concurrency-mt-unsafe)
 	}
 
 	ctx.draw_indexed(pipeline, textured ? ctx.pipeline_layout_with_tex : ctx.pipeline_layout_no_tex, va, descriptor_set);

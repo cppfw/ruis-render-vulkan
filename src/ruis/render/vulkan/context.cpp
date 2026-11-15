@@ -97,16 +97,15 @@ context::context(
 			// maps the framework's normalized viewport coordinates (x right, y down,
 			// zero at the top-left, right/bottom edges at (1, 1)) to the Vulkan NDC.
 			//
-			// In the Vulkan NDC (with a positive-height viewport) -1 -1 corresponds
-			// to the top-left corner, 1 1 to the bottom-right corner, and z points
-			// away from the viewer. This is the same orientation as the framework
-			// (y down, z away), so no axis flip is needed here.
+			// The Vulkan NDC has y up (NDC y=-1 is the bottom, y=1 is the top).
+			// With a positive-height viewport, NDC y=-1 maps to the bottom of the
+			// framebuffer and NDC y=1 maps to the top. Since the framework uses
+			// y-down, we must flip y to convert to NDC's y-up convention.
 			//
-			// (In contrast, OpenGL's viewport has y up, so its initial_matrix flips
-			// y and also flips z, to keep the coordinate system right-handed.)
+			// (This is the same as OpenGL's initial_matrix, which also flips y.)
 			m.set_identity()
-				.translate(-1, -1)
-				.scale(2, 2);
+				.translate(-1, 1)
+				.scale(2, -2);
 			return parameters{m};
 	}()),
 	surface_provider_ref(surface_provider)
@@ -835,12 +834,13 @@ void context::clear_framebuffer_stencil()
 
 r4::vector2<uint32_t> context::to_window_coords(const ruis::vec2& point) const
 {
-	// the same transform as the OpenGL renderer: NDC -> window space
+	// NDC -> window space for Vulkan (positive-height viewport: y=0 at top).
+	// NDC y=-1 maps to window y=H (bottom), NDC y=1 maps to window y=0 (top).
 	const auto p = r4::vector2<float>(point.x(), point.y());
 	const auto& v = this->viewport;
 	r4::vector2<uint32_t> result;
 	result.x() = uint32_t(((p.x() + 1.0f) / 2.0f) * v.d.x() + v.p.x());
-	result.y() = uint32_t(((p.y() + 1.0f) / 2.0f) * v.d.y() + v.p.y());
+	result.y() = uint32_t(((1.0f - p.y()) / 2.0f) * v.d.y() + v.p.y());
 	return result;
 }
 
@@ -1411,8 +1411,16 @@ rasterimage::image_variant context::readback_framebuffer_color(const ruis::rende
 	vkDestroyBuffer(this->device, staging_buffer, nullptr);
 	vkFreeMemory(this->device, staging_memory, nullptr);
 
-	// The Vulkan color attachment is stored top-to-bottom (row 0 = top), which is
-	// already the conventional top-down order, so no flip is needed.
+	// Flip the readback data vertically: the FBO color attachment stores rows
+	// bottom-to-top (row 0 = bottom) due to the Y-flip in the initial matrix
+	// combined with the positive-height viewport.
+	{
+		for (uint32_t y = 0; y < h / 2; ++y) {
+			for (uint32_t x = 0; x < w * 4; ++x) {
+				std::swap(buf[y * w * 4 + x], buf[(h - 1 - y) * w * 4 + x]);
+			}
+		}
+	}
 	auto im = rasterimage::image<uint8_t, 4>::make(r4::vector2<uint32_t>(w, h), buf.data());
 	return {std::move(im)};
 }
@@ -1555,13 +1563,12 @@ VkPipeline context::build_pipeline(
 		.depthClampEnable = VK_FALSE,
 		.rasterizerDiscardEnable = VK_FALSE,
 		.polygonMode = VK_POLYGON_MODE_FILL,
-		// The initial_matrix does NOT flip y (the Vulkan viewport with positive
-		// height maps NDC (-1,-1) to the top-left, so the framework's y-down is
-		// preserved all the way to the framebuffer). This keeps the window-space
-		// winding counter-clockwise for front-facing quads. frontFace defaults to
-		// CCW (the Vulkan zero value), matching OpenGL, so only the cull mode
-		// needs to be set: cull the back (CW) face.
+		// The initial_matrix flips y (converting from the framework's y-down to
+		// NDC's y-up), which reverses the winding order. The framework's quads
+		// are CCW in y-down space, which becomes CW in NDC. So the front face
+		// is CW and we cull the back (CCW) face.
 		.cullMode = VK_CULL_MODE_BACK_BIT,
+		.frontFace = VK_FRONT_FACE_CLOCKWISE, // CW after Y-flip
 		.depthBiasEnable = VK_FALSE,
 		.lineWidth = 1.0f
 	};
