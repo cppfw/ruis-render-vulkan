@@ -222,6 +222,45 @@ void texture_2d::ensure_uploaded()
 		return;
 	}
 	if (this->deferred_data.empty()) {
+		// no data to upload: clear the image to transparent so that
+		// undefined GPU memory does not produce garbage pixels
+		auto& ctx = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+		const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
+		ctx.one_shot([&](VkCommandBuffer cmd) {
+			const auto range = VkImageSubresourceRange{
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.baseMipLevel = 0,
+				.levelCount = 1,
+				.baseArrayLayer = 0,
+				.layerCount = 1
+			};
+			const auto barrier = VkImageMemoryBarrier{
+				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+				.srcAccessMask = 0,
+				.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+				.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+				.newLayout = VK_IMAGE_LAYOUT_GENERAL,
+				.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+				.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+				.image = this->image,
+				.subresourceRange = range
+			};
+			vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+			const auto clear_color = VkClearColorValue{.float32 = {0.0f, 0.0f, 0.0f, 0.0f}};
+			vkCmdClearColorImage(cmd, this->image, VK_IMAGE_LAYOUT_GENERAL, &clear_color, 1, &range);
+			const auto barrier2 = VkImageMemoryBarrier{
+				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+				.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+				.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+				.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+				.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+				.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+				.image = this->image,
+				.subresourceRange = range
+			};
+			vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier2);
+		});
 		this->uploaded = true;
 		return;
 	}

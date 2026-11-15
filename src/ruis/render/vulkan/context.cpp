@@ -835,12 +835,13 @@ void context::clear_framebuffer_stencil()
 
 r4::vector2<uint32_t> context::to_window_coords(const ruis::vec2& point) const
 {
-	// the same transform as the OpenGL renderer: NDC -> window space
+	// NDC -> window space using the swapchain (physical) dimensions
 	const auto p = r4::vector2<float>(point.x(), point.y());
-	const auto& v = this->viewport;
+	const auto w = this->window_dims.x();
+	const auto h = this->window_dims.y();
 	r4::vector2<uint32_t> result;
-	result.x() = uint32_t(((p.x() + 1.0f) / 2.0f) * v.d.x() + v.p.x());
-	result.y() = uint32_t(((p.y() + 1.0f) / 2.0f) * v.d.y() + v.p.y());
+	result.x() = uint32_t(((p.x() + 1.0f) / 2.0f) * w);
+	result.y() = uint32_t(((p.y() + 1.0f) / 2.0f) * h);
 	return result;
 }
 
@@ -876,7 +877,8 @@ r4::rectangle<uint32_t> context::get_viewport() const
 		const auto d = this->current_fb->dims();
 		return r4::rectangle<uint32_t>(0, 0, d.x(), d.y());
 	}
-	return this->viewport;
+	// when rendering to the screen, use the swapchain (physical) dimensions
+	return r4::rectangle<uint32_t>(0, 0, this->window_dims.x(), this->window_dims.y());
 }
 
 void context::set_viewport(const r4::rectangle<uint32_t>& r)
