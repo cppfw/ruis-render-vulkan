@@ -1736,11 +1736,13 @@ void context::begin_render_pass_internal(bool has_depth)
 		attachments.push_back(depth_view);
 	}
 
-	// clear values: color at attachment 0, depth at attachment 1
+	// clear values: color at attachment 0, depth at attachment 1.
+	// FBOs are cleared to transparent so that unclosed areas do not
+	// cover the background when the FBO is rendered to screen as a texture.
 	std::vector<VkClearValue> ordered_clear_values;
 	ordered_clear_values.push_back(VkClearValue{
 		.color = {
-			.float32 = {0.0f, 0.0f, 0.0f, 1.0f}
+			.float32 = {0.0f, 0.0f, 0.0f, this->current_fb ? 0.0f : 1.0f}
 		}
 	});
 	if (has_depth) {
