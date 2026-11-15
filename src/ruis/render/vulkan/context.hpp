@@ -241,6 +241,7 @@ private:
 	uint32_t swapchain_image_count = 0;
 	r4::vector2<uint32_t> window_dims{0, 0};
 	bool swapchain_suboptimal = false; // set when a present returns VK_SUBOPTIMAL_KHR
+	bool swapchain_vsync = false; // vsync state used when swapchain was created
 
 	// depth image used by the swapchain render passes
 	VkImage depth_image = VK_NULL_HANDLE;
