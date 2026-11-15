@@ -217,12 +217,17 @@ context::context(
 	// ---- per-draw uniform buffer ring ----
 	// the ring starts empty; slots are allocated on demand in allocate_ubo_slot()
 
+	// ---- swapchain (only if we have a surface; headless contexts skip this) ----
+	// must come before create_render_passes() which uses swapchain_format
+	if (this->surface_provider_ref.get().has_surface()) {
+		this->create_swapchain();
+	}
+
 	// ---- render passes (needed for both screen and FBO rendering) ----
 	this->create_render_passes();
 
-	// ---- swapchain (only if we have a surface; headless contexts skip this) ----
+	// ---- swapchain framebuffers ----
 	if (this->surface_provider_ref.get().has_surface()) {
-		this->create_swapchain();
 		this->create_swapchain_framebuffers();
 	}
 }
