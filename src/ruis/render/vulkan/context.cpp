@@ -328,15 +328,11 @@ void context::ensure_swapchain_valid()
 	if (!this->surface_provider_ref.get().has_surface()) {
 		return;
 	}
-	// query the actual surface extent (reflects the true window size, which may
-	// differ from the app-tracked window dims if the window manager resized it)
-	VkSurfaceCapabilitiesKHR caps{};
-	VU_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(this->physical_device, this->surface, &caps));
-
-	const uint32_t cur_w = (caps.currentExtent.width != std::numeric_limits<uint32_t>::max()) ? caps.currentExtent.width : this->window_dims.x();
-	const uint32_t cur_h = (caps.currentExtent.height != std::numeric_limits<uint32_t>::max()) ? caps.currentExtent.height : this->window_dims.y();
-	const auto w = std::max<uint32_t>(1, cur_w);
-	const auto h = std::max<uint32_t>(1, cur_h);
+	// use get_dims() which accounts for the HiDPI scale factor
+	// (caps.currentExtent may report logical pixels on Wayland)
+	const auto native_dims = this->native_window.get().get_dims();
+	const auto w = std::max<uint32_t>(1, native_dims.x());
+	const auto h = std::max<uint32_t>(1, native_dims.y());
 	// also check if vsync changed (requires swapchain recreation)
 	const auto vsync_now = this->is_vsync_enabled();
 	const bool vsync_changed = (vsync_now != this->swapchain_vsync);
