@@ -217,18 +217,19 @@ context::context(
 	// ---- per-draw uniform buffer ring ----
 	// the ring starts empty; slots are allocated on demand in allocate_ubo_slot()
 
-	// ---- swapchain ----
-	this->create_swapchain();
-
-	// ---- depth image ----
+	// ---- render passes (needed for both screen and FBO rendering) ----
 	this->create_render_passes();
 
-	// ---- swapchain framebuffers ----
-	this->create_swapchain_framebuffers();
+	// ---- swapchain (only if we have a surface; headless contexts skip this) ----
+	if (this->surface_provider_ref.get().has_surface()) {
+		this->create_swapchain();
+		this->create_swapchain_framebuffers();
+	}
 }
 
 void context::create_swapchain()
 {
+	utki::assert(this->surface != VK_NULL_HANDLE, SL);
 	const auto dims = this->native_window.get().get_dims();
 	this->window_dims = r4::vector2<uint32_t>(std::max<uint32_t>(1, dims.x()), std::max<uint32_t>(1, dims.y()));
 
@@ -318,6 +319,10 @@ void context::create_swapchain()
 
 void context::ensure_swapchain_valid()
 {
+	// headless contexts (e.g. resource loading) have no surface; nothing to do
+	if (!this->surface_provider_ref.get().has_surface()) {
+		return;
+	}
 	// query the actual surface extent (reflects the true window size, which may
 	// differ from the app-tracked window dims if the window manager resized it)
 	VkSurfaceCapabilitiesKHR caps{};
@@ -347,6 +352,7 @@ void context::ensure_swapchain_valid()
 
 void context::create_depth_image()
 {
+	utki::assert(this->window_dims.x() > 0 && this->window_dims.y() > 0, SL);
 	// destroy the old depth image if it exists
 	if (this->depth_image_view != VK_NULL_HANDLE) {
 		vkDestroyImageView(this->device, this->depth_image_view, nullptr);
@@ -394,8 +400,6 @@ void context::create_depth_image()
 
 void context::create_render_passes()
 {
-	// depth image (used by the swapchain render passes)
-	this->create_depth_image();
 
 	auto make_render_pass = [this](
 								VkFormat color_format, //
