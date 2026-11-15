@@ -13,5 +13,5 @@ layout(location = 0) out vec2 tc0;
 
 void main(void) {
 	gl_Position = draw.matrix * a0;
-	tc0 = a1; // Vulkan texture origin is top-left, matching the framework UV convention (0,0 = top-left), so no flip is needed.
+	tc0 = a1.xy;
 }
