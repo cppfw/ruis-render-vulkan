@@ -948,6 +948,9 @@ void context::ensure_frame_began()
 		return;
 	}
 
+	// recreate the swapchain if the window was resized (must happen before rendering)
+	this->ensure_swapchain_valid();
+
 	// wait for the previous frame to complete
 	{
 		// only wait if a frame has been submitted before
@@ -1419,9 +1422,6 @@ rasterimage::image_variant context::readback_framebuffer_color(const ruis::rende
 
 void context::present()
 {
-	// recreate the swapchain if the window was resized
-	this->ensure_swapchain_valid();
-
 	// end the render pass if in progress
 	if (this->render_pass_in_progress) {
 		this->end_render_pass_internal();
