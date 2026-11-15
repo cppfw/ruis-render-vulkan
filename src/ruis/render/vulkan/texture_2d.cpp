@@ -154,25 +154,6 @@ texture_2d::texture_2d(
 			this->deferred_data.assign(data, data + data_size);
 			break;
 		}
-		{
-			auto fmt = [] (rasterimage::format f) -> const char* {
-				switch (f) {
-				case rasterimage::format::grey: return "grey";
-				case rasterimage::format::greya: return "greya";
-				case rasterimage::format::rgb: return "rgb";
-				case rasterimage::format::rgba: return "rgba";
-				default: return "?";
-				}
-			} (type);
-			fprintf(stderr, "[VU-TX] ctor ptr=%p fmt=%s dims=%dx%d data_size=%zu deferred=%zu expected=%zu %s\n", // NOLINT(concurrency-mt-unsafe)
-					(void*)this, fmt, dims.x(), dims.y(), data_size, this->deferred_data.size(), pixel_count*4, // NOLINT(concurrency-mt-unsafe)
-					(this->deferred_data.size() == pixel_count*4) ? "OK" : "*** MISMATCH ***");
-			if (this->deferred_data.size() >= 4000) { // NOLINT(concurrency-mt-unsafe)
-				long sr=0,sg=0,sb=0; long n=0; // NOLINT(concurrency-mt-unsafe)
-				for (size_t i=0;i+3<this->deferred_data.size();i+=4) { sr+=this->deferred_data[i]; sg+=this->deferred_data[i+1]; sb+=this->deferred_data[i+2]; n++; }
-				fprintf(stderr, "[VU-TX]   avgRGB=(%ld,%ld,%ld) over %ld px\n", n?sr/n:0, n?sg/n:0, n?sb/n:0, n); // NOLINT(concurrency-mt-unsafe)
-			}
-		}
 	}
 }
 
@@ -375,7 +356,7 @@ void texture_2d::upload_data(const uint8_t* data, size_t data_size)
 
 		const auto region = VkBufferImageCopy{
 				.bufferOffset = 0,
-				.bufferRowLength = w * static_cast<uint32_t>(rasterimage::to_num_channels(this->ri_format)),
+				.bufferRowLength = 0, // 0 means tightly packed (use image width); data is always RGBA
 				.bufferImageHeight = h,
 				.imageSubresource = {
 					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,

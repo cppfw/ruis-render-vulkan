@@ -1019,8 +1019,6 @@ VkBuffer context::update_uniforms(const r4::matrix4<float>& m, const r4::vector4
 	const size_t slot = idx < this->ubo_ring.size() ? idx : (this->ubo_ring.size() - 1);
 	auto* u = static_cast<draw_uniforms*>(this->ubo_ring_map[slot]);
 	write_matrix_column_major(u->matrix, m);
-	fprintf(stderr, "[VU-MAT] m00=%.2f m01=%.2f m03=%.2f | m10=%.2f m11=%.2f m13=%.2f | m30=%.2f m31=%.2f m33=%.2f\n",
-		m[0][0], m[0][1], m[0][3], m[1][0], m[1][1], m[1][3], m[3][0], m[3][1], m[3][3]);
 	u->color[0] = color.x();
 	u->color[1] = color.y();
 	u->color[2] = color.z();
@@ -1200,11 +1198,7 @@ void context::one_shot(std::function<void(VkCommandBuffer)> cmd)
 
 void context::ensure_textures_uploaded()
 {
-	if (this->textures_uploaded) {
-		return;
-	}
-	
-	// find textures that need uploading
+	// find textures that need uploading (no global flag: new textures can be created at any time)
 	std::vector<texture_2d*> pending;
 	for (auto* tex : this->all_textures) {
 		if (!tex->uploaded && !tex->deferred_data.empty()) {
@@ -1213,15 +1207,15 @@ void context::ensure_textures_uploaded()
 	}
 	
 	if (pending.empty()) {
-		// mark all as uploaded (they were empty)
+		// mark empty textures as uploaded
 		for (auto* tex : this->all_textures) {
 			if (!tex->uploaded && tex->deferred_data.empty()) {
 				tex->uploaded = true;
 			}
 		}
-		this->textures_uploaded = true;
 		return;
 	}
+	
 	
 	// calculate total staging size
 	VkDeviceSize total_size = 0;
@@ -1230,7 +1224,6 @@ void context::ensure_textures_uploaded()
 	}
 	
 	if (total_size == 0) {
-		this->textures_uploaded = true;
 		return;
 	}
 	
@@ -1286,17 +1279,11 @@ void context::ensure_textures_uploaded()
 	vkFreeMemory(this->device, staging_memory, nullptr);
 	vkDestroyBuffer(this->device, staging_buffer, nullptr);
 	
-	// mark all as uploaded
+	// mark uploaded textures
 	for (auto* tex : pending) {
 		tex->deferred_data.clear();
 		tex->uploaded = true;
 	}
-	for (auto* tex : this->all_textures) {
-		if (!tex->uploaded) {
-			tex->uploaded = true;
-		}
-	}
-	this->textures_uploaded = true;
 }
 
 rasterimage::image_variant context::readback_framebuffer_color(const ruis::render::frame_buffer& fb)
@@ -1342,7 +1329,7 @@ rasterimage::image_variant context::readback_framebuffer_color(const ruis::rende
 	// ensure the previous frame is complete before beginning a new one
 	if (this->frame_submitted) {
 		const auto wait_res = vkWaitForFences(this->device, 1, &this->frame_fence, VK_TRUE, 2000000000ull); // 2s timeout
-		if (wait_res != VK_SUCCESS) {
+			if (wait_res != VK_SUCCESS) {
 			// the previous frame is not complete; skip the readback
 			throw std::runtime_error("readback: previous frame not complete");
 		}
@@ -1404,9 +1391,9 @@ rasterimage::image_variant context::readback_framebuffer_color(const ruis::rende
 		};
 		VU_CHECK(vkEndCommandBuffer(this->command_buffer));
 		VU_CHECK(vkQueueSubmit(this->queue, 1, &submit_info, VK_NULL_HANDLE));
-		// wait for the GPU to finish using vkQueueWaitIdle (works on AMD driver)
+			// wait for the GPU to finish using vkQueueWaitIdle (works on AMD driver)
 		VU_CHECK(vkQueueWaitIdle(this->queue));
-		this->frame_submitted = false;
+			this->frame_submitted = false;
 		this->frame_begun = false;
 		this->frame_has_swapchain = false;
 		this->current_swapchain_image = -1;
