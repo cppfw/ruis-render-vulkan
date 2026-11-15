@@ -72,10 +72,19 @@ public:
 
 	/**
 	 * @brief The platform surface associated with this window.
+	 * May be VK_NULL_HANDLE for headless contexts (e.g. resource loading).
 	 */
 	VkSurfaceKHR get_surface() const
 	{
 		return this->surface;
+	}
+
+	/**
+	 * @brief True if this provider has a valid platform surface.
+	 */
+	bool has_surface() const
+	{
+		return this->surface != VK_NULL_HANDLE;
 	}
 
 private:
