@@ -30,6 +30,7 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 #include <utki/shared.hpp>
 
 #include "shaders/shader_common.hpp"
+
 #include "surface_provider.hpp"
 #include "vulkan.hpp"
 
@@ -50,8 +51,7 @@ struct pipeline_key {
 	bool operator==(const pipeline_key& o) const
 	{
 		return this->shader_kind == o.shader_kind && this->blend_key == o.blend_key &&
-			this->depth_enabled == o.depth_enabled && this->textured == o.textured &&
-			this->topology == o.topology &&
+			this->depth_enabled == o.depth_enabled && this->textured == o.textured && this->topology == o.topology &&
 			this->render_pass == o.render_pass;
 	}
 };
@@ -118,9 +118,12 @@ public:
 		rasterimage::image_variant&& negative_z
 	) const override;
 
-	utki::shared_ref<ruis::render::vertex_buffer> make_vertex_buffer(utki::span<const r4::vector4<float>> vertices) const override;
-	utki::shared_ref<ruis::render::vertex_buffer> make_vertex_buffer(utki::span<const r4::vector3<float>> vertices) const override;
-	utki::shared_ref<ruis::render::vertex_buffer> make_vertex_buffer(utki::span<const r4::vector2<float>> vertices) const override;
+	utki::shared_ref<ruis::render::vertex_buffer> make_vertex_buffer(utki::span<const r4::vector4<float>> vertices
+	) const override;
+	utki::shared_ref<ruis::render::vertex_buffer> make_vertex_buffer(utki::span<const r4::vector3<float>> vertices
+	) const override;
+	utki::shared_ref<ruis::render::vertex_buffer> make_vertex_buffer(utki::span<const r4::vector2<float>> vertices
+	) const override;
 	utki::shared_ref<ruis::render::vertex_buffer> make_vertex_buffer(utki::span<const float> vertices) const override;
 
 	utki::shared_ref<ruis::render::index_buffer> make_index_buffer(utki::span<const uint16_t> indices) const override;
@@ -158,12 +161,8 @@ public:
 	void set_viewport(const r4::rectangle<uint32_t>& r) override;
 
 	void enable_blend(bool enable) override;
-	void set_blend_func(
-		blend_factor src_color,
-		blend_factor dst_color,
-		blend_factor src_alpha,
-		blend_factor dst_alpha
-	) override;
+	void set_blend_func(blend_factor src_color, blend_factor dst_color, blend_factor src_alpha, blend_factor dst_alpha)
+		override;
 
 	bool is_depth_enabled() const noexcept override;
 	void enable_depth(bool enable) override;
@@ -199,10 +198,20 @@ public:
 	VkBuffer update_uniforms(const r4::matrix4<float>& m, const r4::vector4<float>& color);
 
 	// allocate a descriptor set for the current draw (the given UBO + optional texture image)
-	VkDescriptorSet allocate_descriptor_set(bool textured, VkBuffer ubo_buffer, VkImageView image_view, VkSampler sampler);
+	VkDescriptorSet allocate_descriptor_set(
+		bool textured,
+		VkBuffer ubo_buffer,
+		VkImageView image_view,
+		VkSampler sampler
+	);
 
 	// bind the pipeline, descriptor set and vertex/index buffers and issue an indexed draw
-	void draw_indexed(VkPipeline pipeline, VkPipelineLayout layout, const ruis::render::vertex_array& va, VkDescriptorSet descriptor_set);
+	void draw_indexed(
+		VkPipeline pipeline,
+		VkPipelineLayout layout,
+		const ruis::render::vertex_array& va,
+		VkDescriptorSet descriptor_set
+	);
 
 	// run a one-shot command buffer (used for texture uploads); blocks until complete
 	void one_shot(std::function<void(VkCommandBuffer)> cmd);
@@ -294,7 +303,6 @@ public:
 	// DEBUG: 0 = screen (swapchain), 1 = offscreen framebuffer
 
 private:
-
 	// ---- cached pipelines ----
 	std::unordered_map<pipeline_key, VkPipeline, pipeline_key_hash> pipelines;
 

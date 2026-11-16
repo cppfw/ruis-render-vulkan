@@ -66,7 +66,6 @@ void create_instance_and_physical_device(
 }
 } // namespace
 
-
 vulkan_device::~vulkan_device()
 {
 	if (this->device != VK_NULL_HANDLE) {
@@ -90,12 +89,7 @@ std::unique_ptr<vulkan_device> vulkan_device::make(
 
 	auto ret = std::unique_ptr<vulkan_device>(new vulkan_device());
 
-	create_instance_and_physical_device(
-		instance_extensions,
-		ret->instance,
-		ret->physical_device,
-		ret->owns_instance
-	);
+	create_instance_and_physical_device(instance_extensions, ret->instance, ret->physical_device, ret->owns_instance);
 
 	// find the graphics queue family
 	std::vector<VkQueueFamilyProperties> families;

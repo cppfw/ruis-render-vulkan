@@ -75,27 +75,43 @@ void vulkan_shader_render(
 	// map the VAO's rendering mode to a Vulkan primitive topology
 	const auto to_vk_topology = [](ruis::render::vertex_array::mode m) -> VkPrimitiveTopology {
 		switch (m) {
-		case ruis::render::vertex_array::mode::triangles:
-			return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-		case ruis::render::vertex_array::mode::triangle_fan:
-			return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
-		case ruis::render::vertex_array::mode::line_loop:
-			return VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
-		case ruis::render::vertex_array::mode::triangle_strip:
-			return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
-		default:
-			return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+			case ruis::render::vertex_array::mode::triangles:
+				return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+			case ruis::render::vertex_array::mode::triangle_fan:
+				return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
+			case ruis::render::vertex_array::mode::line_loop:
+				return VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+			case ruis::render::vertex_array::mode::triangle_strip:
+				return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+			default:
+				return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 		}
 	};
 
-	const auto pipeline =
-		ctx.get_or_create_pipeline(kind, textured, to_vk_topology(va.rendering_mode), vertex_spirv, vertex_spirv_len, fragment_spirv, fragment_spirv_len);
+	const auto pipeline = ctx.get_or_create_pipeline(
+		kind,
+		textured,
+		to_vk_topology(va.rendering_mode),
+		vertex_spirv,
+		vertex_spirv_len,
+		fragment_spirv,
+		fragment_spirv_len
+	);
 
 	const auto ubo_buffer = ctx.update_uniforms(m, color);
 
-	const auto descriptor_set =
-		ctx.allocate_descriptor_set(textured, ubo_buffer, texture ? texture->image_view : VK_NULL_HANDLE, texture ? texture->sampler : VK_NULL_HANDLE);
+	const auto descriptor_set = ctx.allocate_descriptor_set(
+		textured,
+		ubo_buffer,
+		texture ? texture->image_view : VK_NULL_HANDLE,
+		texture ? texture->sampler : VK_NULL_HANDLE
+	);
 
-	ctx.draw_indexed(pipeline, textured ? ctx.pipeline_layout_with_tex : ctx.pipeline_layout_no_tex, va, descriptor_set);
+	ctx.draw_indexed(
+		pipeline,
+		textured ? ctx.pipeline_layout_with_tex : ctx.pipeline_layout_no_tex,
+		va,
+		descriptor_set
+	);
 }
 } // namespace ruis::render::vulkan

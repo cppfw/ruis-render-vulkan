@@ -66,6 +66,7 @@ private:
 	void create_sampler(ruis::render::context::texture_2d_parameters params);
 
 	// deferred upload (public for batched upload in context)
+
 public:
 	bool uploaded = false;
 	rasterimage::format deferred_format = rasterimage::format::rgba;
@@ -73,6 +74,7 @@ public:
 	std::vector<uint8_t> deferred_data;
 	void record_upload_commands(VkCommandBuffer cmd, VkBuffer staging_buffer, VkDeviceSize offset);
 	VkDeviceSize staging_size() const;
+
 private:
 };
 

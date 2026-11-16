@@ -24,14 +24,15 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 #include <cstring>
 #include <limits>
 
-#include "frame_buffer.hpp"
-#include "index_buffer.hpp"
 #include "shaders/shader_color.hpp"
 #include "shaders/shader_color_pos_lum.hpp"
 #include "shaders/shader_color_pos_tex.hpp"
 #include "shaders/shader_color_pos_tex_alpha.hpp"
 #include "shaders/shader_pos_clr.hpp"
 #include "shaders/shader_pos_tex.hpp"
+
+#include "frame_buffer.hpp"
+#include "index_buffer.hpp"
 #include "texture_2d.hpp"
 #include "texture_depth.hpp"
 #include "vertex_array.hpp"
@@ -98,7 +99,9 @@ context::context(
 	const utki::shared_ref<ruis::render::native_window>& native_window, //
 	const utki::shared_ref<const surface_provider>& surface_provider
 ) :
-	ruis::render::context(native_window, [] {
+	ruis::render::context(
+		native_window,
+		[] {
 			r4::matrix4<float> m{};
 			// maps the framework's normalized viewport coordinates (x right, y down,
 			// zero at the top-left, right/bottom edges at (1, 1)) to the Vulkan NDC.
@@ -110,11 +113,10 @@ context::context(
 			//
 			// (In contrast, OpenGL's viewport has y up, so its initial_matrix flips
 			// y and also flips z, to keep the coordinate system right-handed.)
-			m.set_identity()
-				.translate(-1, -1)
-				.scale(2, 2);
+			m.set_identity().translate(-1, -1).scale(2, 2);
 			return parameters{m};
-	}()),
+		}()
+	),
 	surface_provider_ref(surface_provider)
 {
 	(void)native_window;
@@ -134,7 +136,11 @@ context::context(
 			.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
 			.queueFamilyIndex = 0
 		};
-		{ VkCommandPool _vu_tmp_command_pool{}; VU_CHECK(vkCreateCommandPool(this->device, &pool_info, nullptr, &_vu_tmp_command_pool)); this->command_pool = _vu_tmp_command_pool; }
+		{
+			VkCommandPool _vu_tmp_command_pool{};
+			VU_CHECK(vkCreateCommandPool(this->device, &pool_info, nullptr, &_vu_tmp_command_pool));
+			this->command_pool = _vu_tmp_command_pool;
+		}
 
 		const auto alloc_info = VkCommandBufferAllocateInfo{
 			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -150,7 +156,11 @@ context::context(
 			.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
 			.queueFamilyIndex = 0
 		};
-		{ VkCommandPool _vu_tmp_one_shot_pool{}; VU_CHECK(vkCreateCommandPool(this->device, &pool_info, nullptr, &_vu_tmp_one_shot_pool)); this->one_shot_pool = _vu_tmp_one_shot_pool; }
+		{
+			VkCommandPool _vu_tmp_one_shot_pool{};
+			VU_CHECK(vkCreateCommandPool(this->device, &pool_info, nullptr, &_vu_tmp_one_shot_pool));
+			this->one_shot_pool = _vu_tmp_one_shot_pool;
+		}
 
 		const auto alloc_info = VkCommandBufferAllocateInfo{
 			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -162,17 +172,33 @@ context::context(
 	}
 	{
 		const auto fence_info = VkFenceCreateInfo{.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
-		{ VkFence _vu_tmp_frame_fence{}; VU_CHECK(vkCreateFence(this->device, &fence_info, nullptr, &_vu_tmp_frame_fence)); this->frame_fence = _vu_tmp_frame_fence; }
-		{ VkFence _vu_tmp_one_shot_fence{}; VU_CHECK(vkCreateFence(this->device, &fence_info, nullptr, &_vu_tmp_one_shot_fence)); this->one_shot_fence = _vu_tmp_one_shot_fence; }
+		{
+			VkFence _vu_tmp_frame_fence{};
+			VU_CHECK(vkCreateFence(this->device, &fence_info, nullptr, &_vu_tmp_frame_fence));
+			this->frame_fence = _vu_tmp_frame_fence;
+		}
+		{
+			VkFence _vu_tmp_one_shot_fence{};
+			VU_CHECK(vkCreateFence(this->device, &fence_info, nullptr, &_vu_tmp_one_shot_fence));
+			this->one_shot_fence = _vu_tmp_one_shot_fence;
+		}
 	}
 	{
 		const auto sem_info = VkSemaphoreCreateInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-		{ VkSemaphore _vu_tmp_image_available_sem{}; VU_CHECK(vkCreateSemaphore(this->device, &sem_info, nullptr, &_vu_tmp_image_available_sem)); this->image_available_sem = _vu_tmp_image_available_sem; }
-		{ VkSemaphore _vu_tmp_render_finished_sem{}; VU_CHECK(vkCreateSemaphore(this->device, &sem_info, nullptr, &_vu_tmp_render_finished_sem)); this->render_finished_sem = _vu_tmp_render_finished_sem; }
+		{
+			VkSemaphore _vu_tmp_image_available_sem{};
+			VU_CHECK(vkCreateSemaphore(this->device, &sem_info, nullptr, &_vu_tmp_image_available_sem));
+			this->image_available_sem = _vu_tmp_image_available_sem;
+		}
+		{
+			VkSemaphore _vu_tmp_render_finished_sem{};
+			VU_CHECK(vkCreateSemaphore(this->device, &sem_info, nullptr, &_vu_tmp_render_finished_sem));
+			this->render_finished_sem = _vu_tmp_render_finished_sem;
+		}
 	}
 	{
 		const VkDescriptorPoolSize pool_sizes[2] = {
-			{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 16384},
+			{        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 16384},
 			{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 16384}
 		};
 		const auto pool_info = VkDescriptorPoolCreateInfo{
@@ -182,7 +208,11 @@ context::context(
 			.poolSizeCount = 2,
 			.pPoolSizes = pool_sizes
 		};
-		{ VkDescriptorPool _vu_tmp_descriptor_pool{}; VU_CHECK(vkCreateDescriptorPool(this->device, &pool_info, nullptr, &_vu_tmp_descriptor_pool)); this->descriptor_pool = _vu_tmp_descriptor_pool; }
+		{
+			VkDescriptorPool _vu_tmp_descriptor_pool{};
+			VU_CHECK(vkCreateDescriptorPool(this->device, &pool_info, nullptr, &_vu_tmp_descriptor_pool));
+			this->descriptor_pool = _vu_tmp_descriptor_pool;
+		}
 	}
 
 	// ---- descriptor set layouts + pipeline layouts ----
@@ -195,24 +225,63 @@ context::context(
 			.descriptorCount = 1,
 			.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
 		};
-		{ const auto dsl_info = VkDescriptorSetLayoutCreateInfo{ .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .bindingCount = 1, .pBindings = &ubo_binding }; VkDescriptorSetLayout _vu_tmp_dsl_no_tex{}; VU_CHECK(vkCreateDescriptorSetLayout(this->device, &dsl_info, nullptr, &_vu_tmp_dsl_no_tex)); this->dsl_no_tex = _vu_tmp_dsl_no_tex; }
+		{
+			const auto dsl_info = VkDescriptorSetLayoutCreateInfo{
+				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+				.bindingCount = 1,
+				.pBindings = &ubo_binding
+			};
+			VkDescriptorSetLayout _vu_tmp_dsl_no_tex{};
+			VU_CHECK(vkCreateDescriptorSetLayout(this->device, &dsl_info, nullptr, &_vu_tmp_dsl_no_tex));
+			this->dsl_no_tex = _vu_tmp_dsl_no_tex;
+		}
 
 		const VkDescriptorSetLayoutBinding with_tex_bindings[] = {
 			ubo_binding,
-			{
-				.binding = 1,
-				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-				.descriptorCount = 1,
-				.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT
-			}
+			{.binding = 1,
+			  .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			  .descriptorCount = 1,
+			  .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT}
 		};
-		{ const auto dsl_info = VkDescriptorSetLayoutCreateInfo{ .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .bindingCount = 2, .pBindings = with_tex_bindings }; VkDescriptorSetLayout _vu_tmp_dsl_with_tex{}; VU_CHECK(vkCreateDescriptorSetLayout(this->device, &dsl_info, nullptr, &_vu_tmp_dsl_with_tex)); this->dsl_with_tex = _vu_tmp_dsl_with_tex; }
+		{
+			const auto dsl_info = VkDescriptorSetLayoutCreateInfo{
+				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+				.bindingCount = 2,
+				.pBindings = with_tex_bindings
+			};
+			VkDescriptorSetLayout _vu_tmp_dsl_with_tex{};
+			VU_CHECK(vkCreateDescriptorSetLayout(this->device, &dsl_info, nullptr, &_vu_tmp_dsl_with_tex));
+			this->dsl_with_tex = _vu_tmp_dsl_with_tex;
+		}
 	}
 	{
-		{ const auto pl_info = VkPipelineLayoutCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 1, .pSetLayouts = &this->dsl_no_tex }; VkPipelineLayout _vu_tmp_pipeline_layout_no_tex{}; VU_CHECK(vkCreatePipelineLayout(this->device, &pl_info, nullptr, &_vu_tmp_pipeline_layout_no_tex)); this->pipeline_layout_no_tex = _vu_tmp_pipeline_layout_no_tex; }
-		{ const auto pl_info = VkPipelineLayoutCreateInfo{ .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 1, .pSetLayouts = &this->dsl_with_tex }; VkPipelineLayout _vu_tmp_pipeline_layout_with_tex{}; VU_CHECK(vkCreatePipelineLayout(this->device, &pl_info, nullptr, &_vu_tmp_pipeline_layout_with_tex)); this->pipeline_layout_with_tex = _vu_tmp_pipeline_layout_with_tex; }
+		{
+			const auto pl_info = VkPipelineLayoutCreateInfo{
+				.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+				.setLayoutCount = 1,
+				.pSetLayouts = &this->dsl_no_tex
+			};
+			VkPipelineLayout _vu_tmp_pipeline_layout_no_tex{};
+			VU_CHECK(vkCreatePipelineLayout(this->device, &pl_info, nullptr, &_vu_tmp_pipeline_layout_no_tex));
+			this->pipeline_layout_no_tex = _vu_tmp_pipeline_layout_no_tex;
+		}
+		{
+			const auto pl_info = VkPipelineLayoutCreateInfo{
+				.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+				.setLayoutCount = 1,
+				.pSetLayouts = &this->dsl_with_tex
+			};
+			VkPipelineLayout _vu_tmp_pipeline_layout_with_tex{};
+			VU_CHECK(vkCreatePipelineLayout(this->device, &pl_info, nullptr, &_vu_tmp_pipeline_layout_with_tex));
+			this->pipeline_layout_with_tex = _vu_tmp_pipeline_layout_with_tex;
+		}
 	}
-	{ const auto pc_info = VkPipelineCacheCreateInfo{.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO}; VkPipelineCache _vu_tmp_pipeline_cache{}; VU_CHECK(vkCreatePipelineCache(this->device, &pc_info, nullptr, &_vu_tmp_pipeline_cache)); this->pipeline_cache = _vu_tmp_pipeline_cache; }
+	{
+		const auto pc_info = VkPipelineCacheCreateInfo{.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
+		VkPipelineCache _vu_tmp_pipeline_cache{};
+		VU_CHECK(vkCreatePipelineCache(this->device, &pc_info, nullptr, &_vu_tmp_pipeline_cache));
+		this->pipeline_cache = _vu_tmp_pipeline_cache;
+	}
 
 	// ---- per-draw uniform buffer ring ----
 	// the ring starts empty; slots are allocated on demand in allocate_ubo_slot()
@@ -303,7 +372,11 @@ void context::create_swapchain()
 		this->swapchain_image_views.clear();
 	}
 
-	{ VkSwapchainKHR _vu_tmp_swapchain{}; VU_CHECK(vkCreateSwapchainKHR(this->device, &info, nullptr, &_vu_tmp_swapchain)); this->swapchain = _vu_tmp_swapchain; }
+	{
+		VkSwapchainKHR _vu_tmp_swapchain{};
+		VU_CHECK(vkCreateSwapchainKHR(this->device, &info, nullptr, &_vu_tmp_swapchain));
+		this->swapchain = _vu_tmp_swapchain;
+	}
 
 	uint32_t count = 0;
 	VU_CHECK(vkGetSwapchainImagesKHR(this->device, this->swapchain, &count, nullptr));
@@ -372,11 +445,7 @@ void context::create_depth_image()
 		.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
 		.imageType = VK_IMAGE_TYPE_2D,
 		.format = VK_FORMAT_D32_SFLOAT,
-		.extent = {
-			this->window_dims.x(),
-			this->window_dims.y(),
-			1
-		},
+		.extent = {this->window_dims.x(), this->window_dims.y(), 1},
 		.mipLevels = 1,
 		.arrayLayers = 1,
 		.samples = VK_SAMPLE_COUNT_1_BIT,
@@ -384,7 +453,11 @@ void context::create_depth_image()
 		.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
 		.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
 	};
-	{ VkImage _vu_tmp_depth_image{}; VU_CHECK(vkCreateImage(this->device, &image_info, nullptr, &_vu_tmp_depth_image)); this->depth_image = _vu_tmp_depth_image; }
+	{
+		VkImage _vu_tmp_depth_image{};
+		VU_CHECK(vkCreateImage(this->device, &image_info, nullptr, &_vu_tmp_depth_image));
+		this->depth_image = _vu_tmp_depth_image;
+	}
 
 	VkMemoryRequirements mem_reqs{};
 	vkGetImageMemoryRequirements(this->device, this->depth_image, &mem_reqs);
@@ -396,19 +469,34 @@ void context::create_depth_image()
 	VU_CHECK(vkAllocateMemory(this->device, &alloc_info, nullptr, &this->depth_image_memory));
 	VU_CHECK(vkBindImageMemory(this->device, this->depth_image, this->depth_image_memory, 0));
 
-	{ const auto view_info = VkImageViewCreateInfo{ .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = this->depth_image, .viewType = VK_IMAGE_VIEW_TYPE_2D, .format = VK_FORMAT_D32_SFLOAT, .subresourceRange = { .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT, .baseMipLevel = 0, .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1 } }; VkImageView _vu_tmp_depth_image_view{}; VU_CHECK(vkCreateImageView(this->device, &view_info, nullptr, &_vu_tmp_depth_image_view)); this->depth_image_view = _vu_tmp_depth_image_view; }
+	{
+		const auto view_info = VkImageViewCreateInfo{
+			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+			.image = this->depth_image,
+			.viewType = VK_IMAGE_VIEW_TYPE_2D,
+			.format = VK_FORMAT_D32_SFLOAT,
+			.subresourceRange =
+				{.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+								   .baseMipLevel = 0,
+								   .levelCount = 1,
+								   .baseArrayLayer = 0,
+								   .layerCount = 1}
+		};
+		VkImageView _vu_tmp_depth_image_view{};
+		VU_CHECK(vkCreateImageView(this->device, &view_info, nullptr, &_vu_tmp_depth_image_view));
+		this->depth_image_view = _vu_tmp_depth_image_view;
+	}
 }
 
 void context::create_render_passes()
 {
-
 	auto make_render_pass = [this](
 								VkFormat color_format, //
 								VkImageLayout color_final_layout, //
 								VkImageLayout color_load_initial_layout, //
 								bool has_depth, //
 								VkAttachmentLoadOp load_op
-	) {
+							) {
 		std::vector<VkAttachmentDescription> attachments;
 		attachments.push_back(VkAttachmentDescription{
 			.format = color_format,
@@ -420,7 +508,8 @@ void context::create_render_passes()
 			// when loadOp is LOAD the initialLayout must equal the image's current
 			// layout: swapchain images are in PRESENT_SRC_KHR after present, while
 			// FBO color images (created in SHADER_READ_ONLY_OPTIMAL) stay there
-			.initialLayout = (load_op == VK_ATTACHMENT_LOAD_OP_LOAD) ? color_load_initial_layout : VK_IMAGE_LAYOUT_UNDEFINED,
+			.initialLayout =
+				(load_op == VK_ATTACHMENT_LOAD_OP_LOAD) ? color_load_initial_layout : VK_IMAGE_LAYOUT_UNDEFINED,
 			.finalLayout = color_final_layout
 		});
 		if (has_depth) {
@@ -431,21 +520,20 @@ void context::create_render_passes()
 				.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
 				.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
 				.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-				.initialLayout = (load_op == VK_ATTACHMENT_LOAD_OP_LOAD) ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED,
+				.initialLayout = (load_op == VK_ATTACHMENT_LOAD_OP_LOAD)
+					? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+					: VK_IMAGE_LAYOUT_UNDEFINED,
 				.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
 			});
 		}
 
-		const auto color_ref = VkAttachmentReference{
-			.attachment = 0,
-			.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
-		};
+		const auto color_ref =
+			VkAttachmentReference{.attachment = 0, .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
 		std::vector<VkAttachmentReference> refs = {color_ref};
 		if (has_depth) {
-			refs.push_back(VkAttachmentReference{
-				.attachment = 1,
-				.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
-			});
+			refs.push_back(
+				VkAttachmentReference{.attachment = 1, .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}
+			);
 		}
 
 		const auto subpass = VkSubpassDescription{
@@ -476,18 +564,48 @@ void context::create_render_passes()
 		}
 	};
 
-	this->swapchain_render_pass_clear =
-		make_render_pass(this->swapchain_format, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, true, VK_ATTACHMENT_LOAD_OP_CLEAR);
-	this->swapchain_render_pass_load =
-		make_render_pass(this->swapchain_format, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, true, VK_ATTACHMENT_LOAD_OP_LOAD);
-	this->fbo_render_pass_clear_depth =
-		make_render_pass(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, true, VK_ATTACHMENT_LOAD_OP_CLEAR);
-	this->fbo_render_pass_load_depth =
-		make_render_pass(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, true, VK_ATTACHMENT_LOAD_OP_LOAD);
-	this->fbo_render_pass_clear_nod =
-		make_render_pass(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, false, VK_ATTACHMENT_LOAD_OP_CLEAR);
-	this->fbo_render_pass_load_nod =
-		make_render_pass(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, false, VK_ATTACHMENT_LOAD_OP_LOAD);
+	this->swapchain_render_pass_clear = make_render_pass(
+		this->swapchain_format,
+		VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+		VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+		true,
+		VK_ATTACHMENT_LOAD_OP_CLEAR
+	);
+	this->swapchain_render_pass_load = make_render_pass(
+		this->swapchain_format,
+		VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+		VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+		true,
+		VK_ATTACHMENT_LOAD_OP_LOAD
+	);
+	this->fbo_render_pass_clear_depth = make_render_pass(
+		VK_FORMAT_R8G8B8A8_UNORM,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		true,
+		VK_ATTACHMENT_LOAD_OP_CLEAR
+	);
+	this->fbo_render_pass_load_depth = make_render_pass(
+		VK_FORMAT_R8G8B8A8_UNORM,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		true,
+		VK_ATTACHMENT_LOAD_OP_LOAD
+	);
+	this->fbo_render_pass_clear_nod = make_render_pass(
+		VK_FORMAT_R8G8B8A8_UNORM,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		false,
+		VK_ATTACHMENT_LOAD_OP_CLEAR
+	);
+	this->fbo_render_pass_load_nod = make_render_pass(
+		VK_FORMAT_R8G8B8A8_UNORM,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		false,
+		VK_ATTACHMENT_LOAD_OP_LOAD
+	);
 }
 
 void context::create_swapchain_framebuffers()
@@ -512,7 +630,11 @@ void context::create_swapchain_framebuffers()
 				.format = this->swapchain_format,
 				.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
 			};
-			{ VkImageView _vu_tmp{}; VU_CHECK(vkCreateImageView(this->device, &view_info, nullptr, &_vu_tmp)); this->swapchain_image_views[i] = _vu_tmp; }
+			{
+				VkImageView _vu_tmp{};
+				VU_CHECK(vkCreateImageView(this->device, &view_info, nullptr, &_vu_tmp));
+				this->swapchain_image_views[i] = _vu_tmp;
+			}
 		}
 
 		// create framebuffer (color + depth, matching the swapchain render pass)
@@ -526,7 +648,11 @@ void context::create_swapchain_framebuffers()
 			.height = this->window_dims.y(),
 			.layers = 1
 		};
-		{ VkFramebuffer _vu_tmp{}; VU_CHECK(vkCreateFramebuffer(this->device, &fb_info, nullptr, &_vu_tmp)); this->swapchain_framebuffers[i] = _vu_tmp; }
+		{
+			VkFramebuffer _vu_tmp{};
+			VU_CHECK(vkCreateFramebuffer(this->device, &fb_info, nullptr, &_vu_tmp));
+			this->swapchain_framebuffers[i] = _vu_tmp;
+		}
 	}
 }
 
@@ -715,8 +841,7 @@ utki::shared_ref<ruis::render::texture_2d> context::make_texture_2d(
 	);
 }
 
-utki::shared_ref<ruis::render::texture_depth> context::make_texture_depth(
-	rasterimage::dimensioned::dimensions_type dims
+utki::shared_ref<ruis::render::texture_depth> context::make_texture_depth(rasterimage::dimensioned::dimensions_type dims
 ) const
 {
 	return utki::make_shared<texture_depth>(this->get_shared_ref(), dims);
@@ -740,7 +865,8 @@ utki::shared_ref<ruis::render::texture_cube> context::make_texture_cube(
 	throw std::runtime_error("vulkan make_texture_cube: not implemented");
 }
 
-utki::shared_ref<ruis::render::vertex_buffer> context::make_vertex_buffer(utki::span<const r4::vector4<float>> vertices) const
+utki::shared_ref<ruis::render::vertex_buffer> context::make_vertex_buffer(utki::span<const r4::vector4<float>> vertices
+) const
 {
 	std::vector<float> padded;
 	padded.reserve(vertices.size() * 4);
@@ -753,7 +879,8 @@ utki::shared_ref<ruis::render::vertex_buffer> context::make_vertex_buffer(utki::
 	return utki::make_shared<vertex_buffer>(this->get_shared_ref(), std::move(padded));
 }
 
-utki::shared_ref<ruis::render::vertex_buffer> context::make_vertex_buffer(utki::span<const r4::vector3<float>> vertices) const
+utki::shared_ref<ruis::render::vertex_buffer> context::make_vertex_buffer(utki::span<const r4::vector3<float>> vertices
+) const
 {
 	std::vector<float> padded;
 	padded.reserve(vertices.size() * 4);
@@ -766,7 +893,8 @@ utki::shared_ref<ruis::render::vertex_buffer> context::make_vertex_buffer(utki::
 	return utki::make_shared<vertex_buffer>(this->get_shared_ref(), std::move(padded));
 }
 
-utki::shared_ref<ruis::render::vertex_buffer> context::make_vertex_buffer(utki::span<const r4::vector2<float>> vertices) const
+utki::shared_ref<ruis::render::vertex_buffer> context::make_vertex_buffer(utki::span<const r4::vector2<float>> vertices
+) const
 {
 	std::vector<float> padded;
 	padded.reserve(vertices.size() * 4);
@@ -804,7 +932,12 @@ utki::shared_ref<ruis::render::vertex_array> context::make_vertex_array(
 	ruis::render::vertex_array::mode rendering_mode
 ) const
 {
-	return utki::make_shared<vertex_array>(this->get_shared_ref(), std::move(buffers), std::move(indices), rendering_mode);
+	return utki::make_shared<vertex_array>(
+		this->get_shared_ref(),
+		std::move(buffers),
+		std::move(indices),
+		rendering_mode
+	);
 }
 
 utki::shared_ref<ruis::render::frame_buffer> context::make_framebuffer( //
@@ -973,7 +1106,8 @@ void context::ensure_frame_began()
 	{
 		// only wait if a frame has been submitted before
 		if (this->frame_submitted) {
-			const auto wait_res = vkWaitForFences(this->device, 1, &this->frame_fence, VK_TRUE, 2000000000ull); // 2s timeout
+			const auto wait_res =
+				vkWaitForFences(this->device, 1, &this->frame_fence, VK_TRUE, 2000000000ull); // 2s timeout
 			if (wait_res == VK_SUCCESS) {
 				vkResetFences(this->device, 1, &this->frame_fence);
 			}
@@ -1011,7 +1145,11 @@ void context::allocate_ubo_slot()
 		.sharingMode = VK_SHARING_MODE_EXCLUSIVE
 	};
 	VkBuffer buf = VK_NULL_HANDLE;
-	{ VkBuffer _vu_tmp{}; VU_CHECK(vkCreateBuffer(this->device, &buffer_info, nullptr, &_vu_tmp)); buf = _vu_tmp; }
+	{
+		VkBuffer _vu_tmp{};
+		VU_CHECK(vkCreateBuffer(this->device, &buffer_info, nullptr, &_vu_tmp));
+		buf = _vu_tmp;
+	}
 	VkMemoryRequirements mem_reqs{};
 	vkGetBufferMemoryRequirements(this->device, buf, &mem_reqs);
 	const auto alloc_info = VkMemoryAllocateInfo{
@@ -1047,15 +1185,20 @@ VkBuffer context::update_uniforms(const r4::matrix4<float>& m, const r4::vector4
 	return this->ubo_ring[slot];
 }
 
-VkDescriptorSet context::allocate_descriptor_set(bool textured, VkBuffer ubo_buffer, VkImageView image_view, VkSampler sampler)
+VkDescriptorSet context::allocate_descriptor_set(
+	bool textured,
+	VkBuffer ubo_buffer,
+	VkImageView image_view,
+	VkSampler sampler
+)
 {
 	const auto dsl = textured ? this->dsl_with_tex : this->dsl_no_tex;
 
 	VkDescriptorSet set = VK_NULL_HANDLE;
 	const auto alloc_info = VkDescriptorSetAllocateInfo{
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-	.descriptorPool = this->descriptor_pool,
-	.descriptorSetCount = 1,
+		.descriptorPool = this->descriptor_pool,
+		.descriptorSetCount = 1,
 		.pSetLayouts = &dsl
 	};
 	VU_CHECK(vkAllocateDescriptorSets(this->device, &alloc_info, &set));
@@ -1064,11 +1207,7 @@ VkDescriptorSet context::allocate_descriptor_set(bool textured, VkBuffer ubo_buf
 	std::vector<VkWriteDescriptorSet> writes;
 
 	// binding 0: UBO (the per-draw slot written by update_uniforms)
-	const auto buffer_info = VkDescriptorBufferInfo{
-		.buffer = ubo_buffer,
-		.offset = 0,
-		.range = sizeof(draw_uniforms)
-	};
+	const auto buffer_info = VkDescriptorBufferInfo{.buffer = ubo_buffer, .offset = 0, .range = sizeof(draw_uniforms)};
 	const auto ubo_write = VkWriteDescriptorSet{
 		.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 		.dstSet = set,
@@ -1104,7 +1243,12 @@ VkDescriptorSet context::allocate_descriptor_set(bool textured, VkBuffer ubo_buf
 	return set;
 }
 
-void context::draw_indexed(VkPipeline pipeline, VkPipelineLayout layout, const ruis::render::vertex_array& va, VkDescriptorSet descriptor_set)
+void context::draw_indexed(
+	VkPipeline pipeline,
+	VkPipelineLayout layout,
+	const ruis::render::vertex_array& va,
+	VkDescriptorSet descriptor_set
+)
 {
 	// skip drawing if the viewport is zero-sized (e.g. resource loader context)
 	const auto vp = this->get_viewport();
@@ -1149,14 +1293,14 @@ void context::draw_indexed(VkPipeline pipeline, VkPipelineLayout layout, const r
 	if (this->scissor_enabled) {
 		const auto& s = this->scissor;
 		scissor = VkRect2D{
-			.offset = {int32_t(s.p.x()), int32_t(s.p.y())},
-		 .extent = {uint32_t(s.d.x()), uint32_t(s.d.y())}
+			.offset = { int32_t(s.p.x()),  int32_t(s.p.y())},
+			.extent = {uint32_t(s.d.x()), uint32_t(s.d.y())}
 		};
 	} else {
 		// use the effective viewport size (framebuffer dims when rendering to a texture)
 		const auto evp = this->get_viewport();
 		scissor = VkRect2D{
-			.offset = {0, 0},
+			.offset = {        0,         0},
 			.extent = {evp.d.x(), evp.d.y()}
 		};
 	}
@@ -1226,7 +1370,7 @@ void context::ensure_textures_uploaded()
 			pending.push_back(tex);
 		}
 	}
-	
+
 	if (pending.empty()) {
 		// mark empty textures as uploaded
 		for (auto* tex : this->all_textures) {
@@ -1236,18 +1380,17 @@ void context::ensure_textures_uploaded()
 		}
 		return;
 	}
-	
-	
+
 	// calculate total staging size
 	VkDeviceSize total_size = 0;
 	for (auto* tex : pending) {
 		total_size += tex->staging_size();
 	}
-	
+
 	if (total_size == 0) {
 		return;
 	}
-	
+
 	// create a single staging buffer for all textures
 	VkBuffer staging_buffer = VK_NULL_HANDLE;
 	VkDeviceMemory staging_memory = VK_NULL_HANDLE;
@@ -1259,13 +1402,13 @@ void context::ensure_textures_uploaded()
 			.sharingMode = VK_SHARING_MODE_EXCLUSIVE
 		};
 		VU_CHECK(vkCreateBuffer(this->device, &buffer_info, nullptr, &staging_buffer));
-		
+
 		VkMemoryRequirements mem_reqs{};
 		vkGetBufferMemoryRequirements(this->device, staging_buffer, &mem_reqs);
-		
+
 		VkPhysicalDeviceMemoryProperties props{};
 		vkGetPhysicalDeviceMemoryProperties(this->physical_device, &props);
-		
+
 		const auto alloc_info = VkMemoryAllocateInfo{
 			.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
 			.allocationSize = mem_reqs.size,
@@ -1274,7 +1417,7 @@ void context::ensure_textures_uploaded()
 		VU_CHECK(vkAllocateMemory(this->device, &alloc_info, nullptr, &staging_memory));
 		VU_CHECK(vkBindBufferMemory(this->device, staging_buffer, staging_memory, 0));
 	}
-	
+
 	// copy all texture data into the staging buffer
 	void* mapped = nullptr;
 	VU_CHECK(vkMapMemory(this->device, staging_memory, 0, total_size, 0, &mapped));
@@ -1285,7 +1428,7 @@ void context::ensure_textures_uploaded()
 		offset += sz;
 	}
 	vkUnmapMemory(this->device, staging_memory);
-	
+
 	// record all upload commands into a single one-shot command buffer
 	VkDeviceSize cmd_offset = 0;
 	this->one_shot([&](VkCommandBuffer cmd) {
@@ -1295,11 +1438,11 @@ void context::ensure_textures_uploaded()
 			cmd_offset += sz;
 		}
 	});
-	
+
 	// clean up
 	vkFreeMemory(this->device, staging_memory, nullptr);
 	vkDestroyBuffer(this->device, staging_buffer, nullptr);
-	
+
 	// mark uploaded textures
 	for (auto* tex : pending) {
 		tex->deferred_data.clear();
@@ -1327,7 +1470,11 @@ rasterimage::image_variant context::readback_framebuffer_color(const ruis::rende
 			.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			.sharingMode = VK_SHARING_MODE_EXCLUSIVE
 		};
-		{ VkBuffer _vu_tmp_staging{}; VU_CHECK(vkCreateBuffer(this->device, &buffer_info, nullptr, &_vu_tmp_staging)); staging_buffer = _vu_tmp_staging; }
+		{
+			VkBuffer _vu_tmp_staging{};
+			VU_CHECK(vkCreateBuffer(this->device, &buffer_info, nullptr, &_vu_tmp_staging));
+			staging_buffer = _vu_tmp_staging;
+		}
 		VkMemoryRequirements mem_reqs{};
 		vkGetBufferMemoryRequirements(this->device, staging_buffer, &mem_reqs);
 		VkPhysicalDeviceMemoryProperties props{};
@@ -1337,7 +1484,8 @@ rasterimage::image_variant context::readback_framebuffer_color(const ruis::rende
 		alloc_info.allocationSize = mem_reqs.size;
 		for (uint32_t i = 0; i < props.memoryTypeCount; ++i) {
 			if ((mem_reqs.memoryTypeBits & (1 << i)) &&
-				(props.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
+				(props.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
+			{
 				alloc_info.memoryTypeIndex = i;
 				break;
 			}
@@ -1349,8 +1497,9 @@ rasterimage::image_variant context::readback_framebuffer_color(const ruis::rende
 	// append the readback to the frame's command buffer (the FBO render was recorded there)
 	// ensure the previous frame is complete before beginning a new one
 	if (this->frame_submitted) {
-		const auto wait_res = vkWaitForFences(this->device, 1, &this->frame_fence, VK_TRUE, 2000000000ull); // 2s timeout
-			if (wait_res != VK_SUCCESS) {
+		const auto wait_res =
+			vkWaitForFences(this->device, 1, &this->frame_fence, VK_TRUE, 2000000000ull); // 2s timeout
+		if (wait_res != VK_SUCCESS) {
 			// the previous frame is not complete; skip the readback
 			throw std::runtime_error("readback: previous frame not complete");
 		}
@@ -1375,9 +1524,12 @@ rasterimage::image_variant context::readback_framebuffer_color(const ruis::rende
 			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
 			VK_PIPELINE_STAGE_TRANSFER_BIT,
 			0,
-			0, nullptr,
-			0, nullptr,
-			1, &image_barrier
+			0,
+			nullptr,
+			0,
+			nullptr,
+			1,
+			&image_barrier
 		);
 
 		const auto region = VkBufferImageCopy{
@@ -1412,9 +1564,9 @@ rasterimage::image_variant context::readback_framebuffer_color(const ruis::rende
 		};
 		VU_CHECK(vkEndCommandBuffer(this->command_buffer));
 		VU_CHECK(vkQueueSubmit(this->queue, 1, &submit_info, VK_NULL_HANDLE));
-			// wait for the GPU to finish using vkQueueWaitIdle (works on AMD driver)
+		// wait for the GPU to finish using vkQueueWaitIdle (works on AMD driver)
 		VU_CHECK(vkQueueWaitIdle(this->queue));
-			this->frame_submitted = false;
+		this->frame_submitted = false;
 		this->frame_begun = false;
 		this->frame_has_swapchain = false;
 		this->current_swapchain_image = -1;
@@ -1493,8 +1645,14 @@ VkPipeline context::get_or_create_pipeline(
 		}
 	}
 
-	const auto pipeline =
-		this->build_pipeline(key, shader_has_a1(kind), vertex_spirv, vertex_spirv_size, fragment_spirv, fragment_spirv_size);
+	const auto pipeline = this->build_pipeline(
+		key,
+		shader_has_a1(kind),
+		vertex_spirv,
+		vertex_spirv_size,
+		fragment_spirv,
+		fragment_spirv_size
+	);
 	this->pipelines[key] = pipeline;
 	return pipeline;
 }
@@ -1526,11 +1684,9 @@ VkPipeline context::build_pipeline(
 	// ---- vertex input layout ----
 	std::vector<VkVertexInputBindingDescription> bindings;
 	std::vector<VkVertexInputAttributeDescription> attributes;
-	bindings.push_back(VkVertexInputBindingDescription{
-		.binding = 0,
-		.stride = 16,
-		.inputRate = VK_VERTEX_INPUT_RATE_VERTEX
-	});
+	bindings.push_back(
+		VkVertexInputBindingDescription{.binding = 0, .stride = 16, .inputRate = VK_VERTEX_INPUT_RATE_VERTEX}
+	);
 	attributes.push_back(VkVertexInputAttributeDescription{
 		.location = 0,
 		.binding = 0,
@@ -1538,11 +1694,9 @@ VkPipeline context::build_pipeline(
 		.offset = 0
 	});
 	if (has_a1) {
-		bindings.push_back(VkVertexInputBindingDescription{
-			.binding = 1,
-			.stride = 16,
-			.inputRate = VK_VERTEX_INPUT_RATE_VERTEX
-		});
+		bindings.push_back(
+			VkVertexInputBindingDescription{.binding = 1, .stride = 16, .inputRate = VK_VERTEX_INPUT_RATE_VERTEX}
+		);
 		attributes.push_back(VkVertexInputAttributeDescription{
 			.location = 1,
 			.binding = 1,
@@ -1632,10 +1786,7 @@ VkPipeline context::build_pipeline(
 	};
 
 	// ---- dynamic state ----
-	const VkDynamicState dynamic_states[] = {
-		VK_DYNAMIC_STATE_VIEWPORT,
-		VK_DYNAMIC_STATE_SCISSOR
-	};
+	const VkDynamicState dynamic_states[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
 	const auto dynamic_state = VkPipelineDynamicStateCreateInfo{
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
 		.dynamicStateCount = 2,
@@ -1757,11 +1908,7 @@ void context::begin_render_pass_internal(bool has_depth)
 	// don't cover the background; for the screen the swapchain alpha is
 	// ignored by the compositor so it still appears as black.
 	std::vector<VkClearValue> ordered_clear_values;
-	ordered_clear_values.push_back(VkClearValue{
-		.color = {
-			.float32 = {0.0f, 0.0f, 0.0f, 0.0f}
-		}
-	});
+	ordered_clear_values.push_back(VkClearValue{.color = {.float32 = {0.0f, 0.0f, 0.0f, 0.0f}}});
 	if (has_depth) {
 		ordered_clear_values.push_back(VkClearValue{
 			.depthStencil = {1.0f, 0}
@@ -1769,15 +1916,20 @@ void context::begin_render_pass_internal(bool has_depth)
 	}
 
 	const auto render_area = VkRect2D{
-		.offset = {0, 0},
+		.offset = {              0,                0},
 		.extent = {uint32_t(width), uint32_t(height)}
 	};
 
 	// determine the framebuffer handle
 	VkFramebuffer framebuffer = VK_NULL_HANDLE;
 	if (this->current_fb == nullptr) {
-		if (this->current_swapchain_image < 0 || this->current_swapchain_image >= int(this->swapchain_framebuffers.size())) {
-			throw std::runtime_error("begin_render_pass_internal: invalid swapchain image index " + std::to_string(this->current_swapchain_image));
+		if (this->current_swapchain_image < 0 ||
+			this->current_swapchain_image >= int(this->swapchain_framebuffers.size()))
+		{
+			throw std::runtime_error(
+				"begin_render_pass_internal: invalid swapchain image index " +
+				std::to_string(this->current_swapchain_image)
+			);
 		}
 		framebuffer = this->swapchain_framebuffers[uint32_t(this->current_swapchain_image)];
 	} else {
@@ -1893,7 +2045,12 @@ void context::free_descriptor_sets()
 	if (this->frame_descriptor_sets.empty()) {
 		return;
 	}
-	vkFreeDescriptorSets(this->device, this->descriptor_pool, uint32_t(this->frame_descriptor_sets.size()), this->frame_descriptor_sets.data());
+	vkFreeDescriptorSets(
+		this->device,
+		this->descriptor_pool,
+		uint32_t(this->frame_descriptor_sets.size()),
+		this->frame_descriptor_sets.data()
+	);
 }
 
 VkShaderModule context::create_shader_module(const void* spirv, size_t size_words) const
