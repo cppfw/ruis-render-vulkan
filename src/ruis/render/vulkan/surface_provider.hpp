@@ -1,5 +1,5 @@
 /*
-ruis-render-vulkan - platform surface provider
+ruis-render-vulkan - Vulkan renderer
 
 Copyright (C) 2012-2026  Ivan Gagis <igagis@gmail.com>
 
