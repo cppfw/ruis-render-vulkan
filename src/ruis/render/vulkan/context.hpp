@@ -65,7 +65,7 @@ struct pipeline_key_hash {
 		h ^= std::hash<uint32_t>()(k.depth_enabled) + 0x9e3779b9 + (h << 6) + (h >> 2);
 		h ^= std::hash<uint32_t>()(k.textured) + 0x9e3779b9 + (h << 6) + (h >> 2);
 		h ^= std::hash<uint32_t>()(k.topology) + 0x9e3779b9 + (h << 6) + (h >> 2);
-		h ^= std::hash<uintptr_t>()(reinterpret_cast<uintptr_t>(k.render_pass)) + 0x9e3779b9 + (h << 6) + (h >> 2);
+		h ^= std::hash<uint64_t>()(reinterpret_cast<uint64_t>(k.render_pass)) + 0x9e3779b9 + (h << 6) + (h >> 2);
 		return h;
 	}
 };
