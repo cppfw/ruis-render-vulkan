@@ -4,12 +4,12 @@ from conan.tools.scm import Git
 from conan.tools.files import load, update_conandata, copy
 from conan.tools.layout import basic_layout
 
-class RuisRenderOpenglConan(ConanFile):
-	name = "ruis-render-opengl"
+class RuisRenderVulkanConan(ConanFile):
+	name = "ruis-render-vulkan"
 	license = "MIT"
 	author = "Ivan Gagis <igagis@gmail.com>"
 	url = "http://github.com/cppfw/" + name
-	description = "OpenGL renderer for ruis cross-platform GUI C++ library"
+	description = "Vulkan renderer for ruis cross-platform GUI C++ library"
 	topics = ("C++", "cross-platform")
 	settings = "os", "compiler", "build_type", "arch"
 	package_type = "library"
@@ -19,7 +19,7 @@ class RuisRenderOpenglConan(ConanFile):
 
 	def requirements(self):
 		self.requires("ruis/[>=0.0.0]@cppfw/main", transitive_headers=True, transitive_libs=True)
-		self.requires("glew/[>=0.0.0]", transitive_headers=False, transitive_libs=True)
+		self.requires("vulkan-loader/[>=0.0.0]", transitive_headers=True, transitive_libs=True)
 
 	def build_requirements(self):
 		if self.settings.os != "Emscripten":

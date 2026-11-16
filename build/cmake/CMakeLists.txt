@@ -1,7 +1,6 @@
 cmake_minimum_required(VERSION 3.30)
 
-set(name ruis-render-vulkan)
-project(${name})
+project(ruis-render-vulkan)
 
 # No vulkan renderer for iOS.
 # NOTE: this check should go after project() declaration because IOS variable is initialized only then.
@@ -14,7 +13,6 @@ set(dir_name ruis)
 # !!! find_package must go after project() declaration !!!
 # Otherwise VCPKG does not set the CMAKE_PREFIX_PATH to find packages.
 find_package(myci CONFIG REQUIRED)
-find_package(Vulkan REQUIRED)
 
 set(srcs)
 myci_add_source_files(srcs
@@ -27,7 +25,7 @@ myci_add_source_files(srcs
 list(FILTER srcs EXCLUDE REGEX "\\.vert$")
 list(FILTER srcs EXCLUDE REGEX "\\.frag$")
 
-myci_declare_library(${name}
+myci_declare_library(${PROJECT_NAME}
     SOURCES
         ${srcs}
     PUBLIC_INCLUDE_DIRECTORIES
