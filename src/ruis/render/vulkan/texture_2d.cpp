@@ -58,7 +58,8 @@ void create_staging_buffer(
 	bool found = false;
 	for (uint32_t i = 0; i < props.memoryTypeCount; ++i) {
 		if ((mem_reqs.memoryTypeBits & (1 << i)) &&
-			(props.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
+			(props.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
+		{
 			alloc_info.memoryTypeIndex = i;
 			found = true;
 			break;
@@ -120,39 +121,39 @@ texture_2d::texture_2d(
 		const auto pixel_count = size_t(w) * size_t(h);
 		this->deferred_data.reserve(pixel_count * 4);
 		switch (type) {
-		case rasterimage::format::rgba:
-			this->deferred_data.assign(data, data + data_size);
-			break;
-		case rasterimage::format::rgb:
-			for (size_t i = 0; i < pixel_count; ++i) {
-				this->deferred_data.push_back(data[i*3+0]);
-				this->deferred_data.push_back(data[i*3+1]);
-				this->deferred_data.push_back(data[i*3+2]);
-				this->deferred_data.push_back(255);
-			}
-			break;
-		case rasterimage::format::greya:
-			for (size_t i = 0; i < pixel_count; ++i) {
-				auto v = data[i*2+0];
-				auto a = data[i*2+1];
-				this->deferred_data.push_back(v);
-				this->deferred_data.push_back(v);
-				this->deferred_data.push_back(v);
-				this->deferred_data.push_back(a);
-			}
-			break;
-		case rasterimage::format::grey:
-			for (size_t i = 0; i < pixel_count; ++i) {
-				auto v = data[i];
-				this->deferred_data.push_back(v);
-				this->deferred_data.push_back(v);
-				this->deferred_data.push_back(v);
-				this->deferred_data.push_back(255);
-			}
-			break;
-		default:
-			this->deferred_data.assign(data, data + data_size);
-			break;
+			case rasterimage::format::rgba:
+				this->deferred_data.assign(data, data + data_size);
+				break;
+			case rasterimage::format::rgb:
+				for (size_t i = 0; i < pixel_count; ++i) {
+					this->deferred_data.push_back(data[i * 3 + 0]);
+					this->deferred_data.push_back(data[i * 3 + 1]);
+					this->deferred_data.push_back(data[i * 3 + 2]);
+					this->deferred_data.push_back(255);
+				}
+				break;
+			case rasterimage::format::greya:
+				for (size_t i = 0; i < pixel_count; ++i) {
+					auto v = data[i * 2 + 0];
+					auto a = data[i * 2 + 1];
+					this->deferred_data.push_back(v);
+					this->deferred_data.push_back(v);
+					this->deferred_data.push_back(v);
+					this->deferred_data.push_back(a);
+				}
+				break;
+			case rasterimage::format::grey:
+				for (size_t i = 0; i < pixel_count; ++i) {
+					auto v = data[i];
+					this->deferred_data.push_back(v);
+					this->deferred_data.push_back(v);
+					this->deferred_data.push_back(v);
+					this->deferred_data.push_back(255);
+				}
+				break;
+			default:
+				this->deferred_data.assign(data, data + data_size);
+				break;
 		}
 	}
 }
@@ -183,22 +184,28 @@ void texture_2d::record_upload_commands(VkCommandBuffer cmd, VkBuffer staging_bu
 		.image = this->image,
 		.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
 	};
-	vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &dst_barrier);
+	vkCmdPipelineBarrier(
+		cmd,
+		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		0,
+		0,
+		nullptr,
+		0,
+		nullptr,
+		1,
+		&dst_barrier
+	);
 
 	// all textures use RGBA format (4 bytes per pixel), tightly packed
 	const auto region = VkBufferImageCopy{
-			.bufferOffset = offset,
-			.bufferRowLength = 0, // 0 means tightly packed (use image width)
-			.bufferImageHeight = h,
-			.imageSubresource = {
-				VK_IMAGE_ASPECT_COLOR_BIT,
-				0,
-				0,
-				1
-			},
-			.imageOffset = {0, 0, 0},
-			.imageExtent = {w, h, 1}
-		};
+		.bufferOffset = offset,
+		.bufferRowLength = 0, // 0 means tightly packed (use image width)
+		.bufferImageHeight = h,
+		.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+		.imageOffset = {0, 0, 0},
+		.imageExtent = {w, h, 1}
+	};
 	vkCmdCopyBufferToImage(cmd, staging_buffer, this->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
 	// transition to shader read-only
@@ -213,7 +220,18 @@ void texture_2d::record_upload_commands(VkCommandBuffer cmd, VkBuffer staging_bu
 		.image = this->image,
 		.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
 	};
-	vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &img_barrier);
+	vkCmdPipelineBarrier(
+		cmd,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+		0,
+		0,
+		nullptr,
+		0,
+		nullptr,
+		1,
+		&img_barrier
+	);
 }
 
 void texture_2d::ensure_uploaded()
@@ -225,7 +243,7 @@ void texture_2d::ensure_uploaded()
 		// no data to upload: clear the image to transparent so that
 		// undefined GPU memory does not produce garbage pixels
 		auto& ctx = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-		const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
+			const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
 		ctx.one_shot([&](VkCommandBuffer cmd) {
 			const auto range = VkImageSubresourceRange{
 				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -245,8 +263,21 @@ void texture_2d::ensure_uploaded()
 				.image = this->image,
 				.subresourceRange = range
 			};
-			vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
-			const auto clear_color = VkClearColorValue{.float32 = {0.0f, 0.0f, 0.0f, 0.0f}};
+			vkCmdPipelineBarrier(
+				cmd,
+				VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+				VK_PIPELINE_STAGE_TRANSFER_BIT,
+				0,
+				0,
+				nullptr,
+				0,
+				nullptr,
+				1,
+				&barrier
+			);
+			const auto clear_color = VkClearColorValue{
+				.float32 = {0.0f, 0.0f, 0.0f, 0.0f}
+			};
 			vkCmdClearColorImage(cmd, this->image, VK_IMAGE_LAYOUT_GENERAL, &clear_color, 1, &range);
 			const auto barrier2 = VkImageMemoryBarrier{
 				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -259,7 +290,18 @@ void texture_2d::ensure_uploaded()
 				.image = this->image,
 				.subresourceRange = range
 			};
-			vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier2);
+			vkCmdPipelineBarrier(
+				cmd,
+				VK_PIPELINE_STAGE_TRANSFER_BIT,
+				VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+				0,
+				0,
+				nullptr,
+				0,
+				nullptr,
+				1,
+				&barrier2
+			);
 		});
 		this->uploaded = true;
 		return;
@@ -272,7 +314,7 @@ void texture_2d::ensure_uploaded()
 texture_2d::~texture_2d()
 {
 	auto& ctx = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-	const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
+		const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
 	// remove from the context's texture list
 	auto& tex_list = ctx.all_textures;
 	for (auto it = tex_list.begin(); it != tex_list.end(); ++it) {
@@ -292,19 +334,20 @@ texture_2d::~texture_2d()
 void texture_2d::create_image(rasterimage::dimensioned::dimensions_type dims)
 {
 	auto& ctx = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-	const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
+		const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
 
-VkImageCreateInfo image_info{};
-image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-image_info.imageType = VK_IMAGE_TYPE_2D;
-image_info.format = this->format;
-image_info.extent = {static_cast<uint32_t>(dims.x()), static_cast<uint32_t>(dims.y()), 1};
-image_info.mipLevels = 1;
-image_info.arrayLayers = 1;
-image_info.samples = VK_SAMPLE_COUNT_1_BIT;
-image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-image_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	VkImageCreateInfo image_info{};
+	image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	image_info.imageType = VK_IMAGE_TYPE_2D;
+	image_info.format = this->format;
+	image_info.extent = {static_cast<uint32_t>(dims.x()), static_cast<uint32_t>(dims.y()), 1};
+	image_info.mipLevels = 1;
+	image_info.arrayLayers = 1;
+	image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+	image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+	image_info.usage =
+		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	VU_CHECK(vkCreateImage(ctx.device, &image_info, nullptr, &this->image));
 
 	VkMemoryRequirements mem_reqs{};
@@ -322,19 +365,17 @@ image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		.image = this->image,
 		.viewType = VK_IMAGE_VIEW_TYPE_2D,
 		.format = this->format,
-		.components = {
-			.r = VK_COMPONENT_SWIZZLE_IDENTITY,
-			.g = VK_COMPONENT_SWIZZLE_IDENTITY,
-			.b = VK_COMPONENT_SWIZZLE_IDENTITY,
-			.a = VK_COMPONENT_SWIZZLE_IDENTITY
-		},
-		.subresourceRange = {
-			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-			.baseMipLevel = 0,
-			.levelCount = 1,
-			.baseArrayLayer = 0,
-			.layerCount = 1
-		}
+		.components =
+			{.r = VK_COMPONENT_SWIZZLE_IDENTITY,
+						 .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+						 .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+						 .a = VK_COMPONENT_SWIZZLE_IDENTITY},
+		.subresourceRange =
+			{.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+						 .baseMipLevel = 0,
+						 .levelCount = 1,
+						 .baseArrayLayer = 0,
+						 .layerCount = 1}
 	};
 	VU_CHECK(vkCreateImageView(ctx.device, &view_info, nullptr, &this->image_view));
 }
@@ -342,13 +383,15 @@ image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 void texture_2d::create_sampler(ruis::render::context::texture_2d_parameters params)
 {
 	auto& ctx = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-	const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
+		const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
 	(void)ctx;
 
 	const auto sampler_info = VkSamplerCreateInfo{
 		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-		.magFilter = params.mag_filter == ruis::render::texture_2d::filter::linear ? VK_FILTER_LINEAR : VK_FILTER_NEAREST,
-		.minFilter = params.min_filter == ruis::render::texture_2d::filter::linear ? VK_FILTER_LINEAR : VK_FILTER_NEAREST,
+		.magFilter =
+			params.mag_filter == ruis::render::texture_2d::filter::linear ? VK_FILTER_LINEAR : VK_FILTER_NEAREST,
+		.minFilter =
+			params.min_filter == ruis::render::texture_2d::filter::linear ? VK_FILTER_LINEAR : VK_FILTER_NEAREST,
 		.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
 		.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
 		.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
@@ -369,7 +412,7 @@ void texture_2d::create_sampler(ruis::render::context::texture_2d_parameters par
 void texture_2d::upload_data(const uint8_t* data, size_t data_size)
 {
 	auto& ctx = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-	const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
+		const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
 
 	VkBuffer staging_buffer = VK_NULL_HANDLE;
 	VkDeviceMemory staging_memory = VK_NULL_HANDLE;
@@ -391,21 +434,28 @@ void texture_2d::upload_data(const uint8_t* data, size_t data_size)
 			.image = this->image,
 			.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
 		};
-		vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &dst_barrier);
+		vkCmdPipelineBarrier(
+			cmd,
+			VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+			VK_PIPELINE_STAGE_TRANSFER_BIT,
+			0,
+			0,
+			nullptr,
+			0,
+			nullptr,
+			1,
+			&dst_barrier
+		);
 
 		const auto region = VkBufferImageCopy{
-				.bufferOffset = 0,
-				.bufferRowLength = 0, // 0 means tightly packed (use image width); data is always RGBA
-				.bufferImageHeight = h,
-				.imageSubresource = {
-					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-					.mipLevel = 0,
-					.baseArrayLayer = 0,
-					.layerCount = 1
-				},
-				.imageOffset = {0, 0, 0},
-				.imageExtent = {w, h, 1}
-			};
+			.bufferOffset = 0,
+			.bufferRowLength = 0, // 0 means tightly packed (use image width); data is always RGBA
+			.bufferImageHeight = h,
+			.imageSubresource =
+				{.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1},
+			.imageOffset = {0, 0, 0},
+			.imageExtent = {w, h, 1}
+		};
 		vkCmdCopyBufferToImage(
 			cmd, //
 			staging_buffer,
@@ -432,9 +482,12 @@ void texture_2d::upload_data(const uint8_t* data, size_t data_size)
 			VK_PIPELINE_STAGE_TRANSFER_BIT,
 			VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
 			0,
-			0, nullptr,
-			0, nullptr,
-			1, &img_barrier
+			0,
+			nullptr,
+			0,
+			nullptr,
+			1,
+			&img_barrier
 		);
 	});
 

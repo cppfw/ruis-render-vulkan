@@ -89,7 +89,7 @@ rasterimage::image_variant frame_buffer::get_color_pixels()
 	// frame's command buffer (deferred), so the readback is appended to it, then the
 	// frame is submitted and waited on.
 	auto& ctx = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-	const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
+		const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
 	return ctx.readback_framebuffer_color(*this);
 }
 

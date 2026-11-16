@@ -33,11 +33,8 @@ class shader_color : public ruis::render::coloring_shader
 public:
 	shader_color(const utki::shared_ref<const ruis::render::context>& rendering_context);
 
-	void render(
-		const r4::matrix4<float>& m,
-		const ruis::render::vertex_array& va,
-		const r4::vector4<float>& color
-	) const override;
+	void render(const r4::matrix4<float>& m, const ruis::render::vertex_array& va, const r4::vector4<float>& color)
+		const override;
 
 private:
 	const utki::shared_ref<const ruis::render::context> ctx_ref;

@@ -22,6 +22,7 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 #include "shader_color_pos_tex_alpha.hpp"
 
 #include "../texture_2d.hpp"
+
 #include "shader_spirv.hpp"
 
 using namespace ruis::render::vulkan;

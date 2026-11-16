@@ -53,11 +53,7 @@ void texture_depth::create_image()
 		.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
 		.imageType = VK_IMAGE_TYPE_2D,
 		.format = VK_FORMAT_D32_SFLOAT,
-		.extent = {
-			static_cast<uint32_t>(this->dims().x()),
-			static_cast<uint32_t>(this->dims().y()),
-			1
-		},
+		.extent = {static_cast<uint32_t>(this->dims().x()), static_cast<uint32_t>(this->dims().y()), 1},
 		.mipLevels = 1,
 		.arrayLayers = 1,
 		.samples = VK_SAMPLE_COUNT_1_BIT,
@@ -82,13 +78,12 @@ void texture_depth::create_image()
 		.image = this->image,
 		.viewType = VK_IMAGE_VIEW_TYPE_2D,
 		.format = VK_FORMAT_D32_SFLOAT,
-		.subresourceRange = {
-			.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
-			.baseMipLevel = 0,
-			.levelCount = 1,
-			.baseArrayLayer = 0,
-			.layerCount = 1
-		}
+		.subresourceRange =
+			{.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+							   .baseMipLevel = 0,
+							   .levelCount = 1,
+							   .baseArrayLayer = 0,
+							   .layerCount = 1}
 	};
 	VU_CHECK(vkCreateImageView(ctx.device, &view_info, nullptr, &this->image_view));
 }

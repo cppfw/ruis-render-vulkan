@@ -25,13 +25,11 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 #include <string>
 #include <vector>
 
-#include <vulkan/vulkan.h>
-
-#include <ruis/render/context.hpp>
-
-#include <rasterimage/image_variant.hpp>
 #include <r4/vector.hpp>
+#include <rasterimage/image_variant.hpp>
+#include <ruis/render/context.hpp>
 #include <utki/debug.hpp>
+#include <vulkan/vulkan.h>
 
 namespace ruis::render::vulkan {
 
@@ -47,8 +45,6 @@ inline void vk_error(VkResult res, const char* where)
 			ruis::render::vulkan::vk_error(vu_check_res, #x); \
 		} \
 	} while (false)
-
-
 
 // helper macro: call vkCreate<TypeName> and check the result
 // Usage: VU_CREATE(VkFence, device, &info)
@@ -93,13 +89,13 @@ inline VkFormat to_vk_format_8bit(rasterimage::format f)
 	// Use only formats that are universally supported.
 	// R8G8B8_UNORM is not supported on some AMD drivers, so map everything to RGBA.
 	switch (f) {
-	case rasterimage::format::grey:
-	case rasterimage::format::greya:
-	case rasterimage::format::rgb:
-	case rasterimage::format::rgba:
-		return VK_FORMAT_R8G8B8A8_UNORM;
-	default:
-		return VK_FORMAT_UNDEFINED;
+		case rasterimage::format::grey:
+		case rasterimage::format::greya:
+		case rasterimage::format::rgb:
+		case rasterimage::format::rgba:
+			return VK_FORMAT_R8G8B8A8_UNORM;
+		default:
+			return VK_FORMAT_UNDEFINED;
 	}
 }
 
@@ -107,16 +103,16 @@ inline VkFormat to_vk_format_8bit(rasterimage::format f)
 inline size_t vk_format_component_count(VkFormat f)
 {
 	switch (f) {
-	case VK_FORMAT_R8_UNORM:
-		return 1;
-	case VK_FORMAT_R8G8_UNORM:
-		return 2;
-	case VK_FORMAT_R8G8B8_UNORM:
-		return 3;
-	case VK_FORMAT_R8G8B8A8_UNORM:
-		return 4;
-	default:
-		throw std::logic_error("unhandled vk format in vk_format_component_count()");
+		case VK_FORMAT_R8_UNORM:
+			return 1;
+		case VK_FORMAT_R8G8_UNORM:
+			return 2;
+		case VK_FORMAT_R8G8B8_UNORM:
+			return 3;
+		case VK_FORMAT_R8G8B8A8_UNORM:
+			return 4;
+		default:
+			throw std::logic_error("unhandled vk format in vk_format_component_count()");
 	}
 }
 
@@ -133,7 +129,8 @@ inline uint32_t pick_device_local_memory_type(VkPhysicalDevice phys, const VkMem
 	vkGetPhysicalDeviceMemoryProperties(phys, &props);
 	for (uint32_t i = 0; i < props.memoryTypeCount; ++i) {
 		if ((mem_reqs.memoryTypeBits & (1 << i)) &&
-			(props.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+			(props.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
+		{
 			return i;
 		}
 	}
@@ -149,14 +146,16 @@ inline uint32_t pick_host_visible_memory_type(VkPhysicalDevice phys, const VkMem
 	for (uint32_t i = 0; i < props.memoryTypeCount; ++i) {
 		if ((mem_reqs.memoryTypeBits & (1 << i)) &&
 			(props.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) &&
-			(props.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
+			(props.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
+		{
 			return i;
 		}
 	}
 	// fallback: host-visible only
 	for (uint32_t i = 0; i < props.memoryTypeCount; ++i) {
 		if ((mem_reqs.memoryTypeBits & (1 << i)) &&
-			(props.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
+			(props.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
+		{
 			return i;
 		}
 	}
@@ -167,6 +166,7 @@ struct draw_uniforms {
 	float matrix[16];
 	float color[4];
 };
+
 static_assert(sizeof(draw_uniforms) == 80, "draw_uniforms size mismatch");
 
 /**
