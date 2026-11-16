@@ -1,24 +1,24 @@
 // this file is to test basic usage of the library,
-// mainly test that linking to the library works, so just call any
+// mainly test that linking to the library works, so just reference any
 // non-inline function of the library to test it.
 
-#include <ruis/render/opengl/context.hpp>
+#include <ruis/render/vulkan/context.hpp>
+#include <ruis/render/vulkan/vulkan_device.hpp>
 
+#include <functional>
 #include <iostream>
 
 int main(int argc, const char** argv){
+    // reference a non-inline function of the library to test that linking works.
+    // do not call it (would require a real Vulkan device).
     std::function<void()> f = [](){
-        ruis::render::opengl::context c(
-            utki::make_shared<ruis::render::native_window>()
-        );
+        (void)ruis::render::vulkan::vulkan_device::make({}, {});
     };
-
-    // do not call f() to avoid segmentation fault, becuase OpenGL is not initialized
 
     if(!f){
         return 1;
     }
 
-    std::cout << "Hello ruis-render-opengl!" << std::endl;
+    std::cout << "Hello ruis-render-vulkan!" << std::endl;
     return 0;
 }

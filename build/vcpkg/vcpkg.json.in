@@ -1,8 +1,8 @@
 {
-    "name": "ruis-render-opengl",
+    "name": "ruis-render-vulkan",
     "version": "$(version)",
-    "homepage": "https://github.com/cppfw/ruis-render-opengl",
-    "description": "ruis OpenGL renderer",
+    "homepage": "https://github.com/cppfw/ruis-render-vulkan",
+    "description": "ruis Vulkan renderer",
     "license": "MIT",
     "dependencies": [
       {
@@ -20,6 +20,6 @@
       "utki",
       "ruis",
       "rasterimage",
-      "glew"
+      "vulkan"
     ]
   }
