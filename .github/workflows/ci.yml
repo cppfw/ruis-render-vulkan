@@ -338,7 +338,10 @@ jobs:
           repo: deb https://gagis.hopto.org/repo/cppfw/${{ matrix.os }} ${{ matrix.codename }} main
           repo-name: cppfw
           keys-asc: https://gagis.hopto.org/repo/cppfw/pubkey.gpg
-          install: myci cmake git curl zip unzip tar nodejs pkg-config libgl1-mesa-dev libglu1-mesa-dev
+          # libx11-dev/libxrandr-dev/libxcb1-dev/libwayland-dev are needed by the
+          # vcpkg vulkan-loader port build, which enables the X11/XCB/Wayland WSI
+          # on Linux and includes the platform headers from vulkan.h.
+          install: myci cmake git curl zip unzip tar nodejs pkg-config libgl1-mesa-dev libglu1-mesa-dev libx11-dev libxrandr-dev libxcb1-dev libwayland-dev
       - name: git clone
         uses: myci-actions/checkout@main
       - name: install vcpkg
