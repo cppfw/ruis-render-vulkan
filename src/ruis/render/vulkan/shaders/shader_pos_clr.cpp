@@ -21,6 +21,8 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 #include "shader_pos_clr.hpp"
 
+#include <iterator>
+
 #include "shader_spirv.hpp"
 
 using namespace ruis::render::vulkan;
@@ -35,10 +37,10 @@ void shader_pos_clr::render(const r4::matrix4<float>& m, const ruis::render::ver
 	vulkan_shader_render(
 		this->ctx_ref, //
 		shader_kind::pos_clr,
-		spirv_shader_pos_clr_vertex,
-		sizeof(spirv_shader_pos_clr_vertex) / sizeof(uint32_t),
-		spirv_shader_pos_clr_fragment,
-		sizeof(spirv_shader_pos_clr_fragment) / sizeof(uint32_t),
+		std::data(spirv_shader_pos_clr_vertex),
+		spirv_shader_pos_clr_vertex_size,
+		std::data(spirv_shader_pos_clr_fragment),
+		spirv_shader_pos_clr_fragment_size,
 		nullptr, // no texture
 		m,
 		r4::vector4<float>(0, 0, 0, 0),

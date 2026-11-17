@@ -56,23 +56,31 @@ struct pipeline_key {
 	}
 };
 
+// boost-style hash combine
+inline void hash_combine(size_t& h, size_t v)
+{
+	// NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers, "boost hash_combine constants")
+	h ^= v + 0x9e3779b97f4a7c15 + (h << 6) + (h >> 2);
+}
+
 struct pipeline_key_hash {
 	size_t operator()(const pipeline_key& k) const noexcept
 	{
 		size_t h = 0;
-		h ^= std::hash<uint32_t>()(k.shader_kind) + 0x9e3779b9 + (h << 6) + (h >> 2);
-		h ^= std::hash<uint32_t>()(k.blend_key) + 0x9e3779b9 + (h << 6) + (h >> 2);
-		h ^= std::hash<uint32_t>()(k.depth_enabled) + 0x9e3779b9 + (h << 6) + (h >> 2);
-		h ^= std::hash<uint32_t>()(k.textured) + 0x9e3779b9 + (h << 6) + (h >> 2);
-		h ^= std::hash<uint32_t>()(k.topology) + 0x9e3779b9 + (h << 6) + (h >> 2);
-		h ^= std::hash<uint64_t>()(reinterpret_cast<uint64_t>(k.render_pass)) + 0x9e3779b9 + (h << 6) + (h >> 2);
+		hash_combine(h, std::hash<uint32_t>()(k.shader_kind));
+		hash_combine(h, std::hash<uint32_t>()(k.blend_key));
+		hash_combine(h, std::hash<uint32_t>()(k.depth_enabled));
+		hash_combine(h, std::hash<uint32_t>()(k.textured));
+		hash_combine(h, std::hash<uint32_t>()(k.topology));
+		hash_combine(
+			h,
+			// NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast, "Vulkan handles are opaque 64-bit values")
+			std::hash<uint64_t>()(reinterpret_cast<uint64_t>(k.render_pass))
+		);
 		return h;
 	}
 };
 
-class vertex_buffer;
-class index_buffer;
-class vertex_array;
 class texture_2d;
 
 class context : public ruis::render::context
@@ -83,6 +91,12 @@ public:
 		const utki::shared_ref<const surface_provider>& surface_provider
 	);
 	~context() override;
+
+	// noncopyable: owns the GPU resources of a single window
+	context(const context&) = delete;
+	context& operator=(const context&) = delete;
+	context(context&&) = delete;
+	context& operator=(context&&) = delete;
 
 	// ===============================
 	// ====== factory functions ======

@@ -49,6 +49,8 @@ public:
 
 	surface_provider(const surface_provider&) = delete;
 	surface_provider& operator=(const surface_provider&) = delete;
+	surface_provider(surface_provider&&) = delete;
+	surface_provider& operator=(surface_provider&&) = delete;
 
 	/**
 	 * @brief The shared Vulkan instance.

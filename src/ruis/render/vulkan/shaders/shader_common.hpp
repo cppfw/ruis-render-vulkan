@@ -53,6 +53,7 @@ constexpr bool shader_has_texture(shader_kind k)
 	return k == shader_kind::pos_tex || k == shader_kind::color_pos_tex || k == shader_kind::color_pos_tex_alpha;
 }
 
+// NOLINTNEXTLINE(bugprone-forward-declaration-namespace, "this is the vulkan-specific context, not ruis::render::context")
 class context;
 class texture_2d;
 

@@ -29,6 +29,11 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 using namespace ruis::render::vulkan;
 
 namespace {
+// fully opaque alpha value
+constexpr uint8_t opaque_alpha = 255;
+} // namespace
+
+namespace {
 // create a host-visible staging buffer with the given contents
 void create_staging_buffer(
 	VkDevice device, //
@@ -98,18 +103,15 @@ texture_2d::texture_2d(
 		rendering_context, //
 		dims
 	),
+	format(to_vk_format_8bit(type)), //
+	ri_format(type), //
 	ctx_ref(rendering_context)
 {
-	auto& ctx = static_cast<const context&>(rendering_context.get());
-	(void)ctx;
-
-	this->ri_format = type;
-	this->format = to_vk_format_8bit(type);
-
 	this->create_image(dims);
 	this->create_sampler(params);
 
 	// register with the context for deferred upload tracking
+	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, cppcoreguidelines-pro-type-static-cast-downcast, "the context is owned by the renderer; the const qualifier comes from the shared_ref<const context> API")
 	auto& vk_ctx = const_cast<context&>(static_cast<const context&>(rendering_context.get()));
 	vk_ctx.all_textures.push_back(this);
 
@@ -120,22 +122,23 @@ texture_2d::texture_2d(
 		const auto h = dims.y();
 		const auto pixel_count = size_t(w) * size_t(h);
 		this->deferred_data.reserve(pixel_count * 4);
+		const auto data_span = utki::span<const uint8_t>(data, data_size);
 		switch (type) {
 			case rasterimage::format::rgba:
-				this->deferred_data.assign(data, data + data_size);
+				this->deferred_data.assign(data_span.begin(), data_span.end());
 				break;
 			case rasterimage::format::rgb:
 				for (size_t i = 0; i < pixel_count; ++i) {
-					this->deferred_data.push_back(data[i * 3 + 0]);
-					this->deferred_data.push_back(data[i * 3 + 1]);
-					this->deferred_data.push_back(data[i * 3 + 2]);
-					this->deferred_data.push_back(255);
+					this->deferred_data.push_back(data_span[i * 3 + 0]);
+					this->deferred_data.push_back(data_span[i * 3 + 1]);
+					this->deferred_data.push_back(data_span[i * 3 + 2]);
+					this->deferred_data.push_back(opaque_alpha);
 				}
 				break;
 			case rasterimage::format::greya:
 				for (size_t i = 0; i < pixel_count; ++i) {
-					auto v = data[i * 2 + 0];
-					auto a = data[i * 2 + 1];
+					auto v = data_span[i * 2 + 0];
+					auto a = data_span[i * 2 + 1];
 					this->deferred_data.push_back(v);
 					this->deferred_data.push_back(v);
 					this->deferred_data.push_back(v);
@@ -144,15 +147,15 @@ texture_2d::texture_2d(
 				break;
 			case rasterimage::format::grey:
 				for (size_t i = 0; i < pixel_count; ++i) {
-					auto v = data[i];
+					auto v = data_span[i];
 					this->deferred_data.push_back(v);
 					this->deferred_data.push_back(v);
 					this->deferred_data.push_back(v);
-					this->deferred_data.push_back(255);
+					this->deferred_data.push_back(opaque_alpha);
 				}
 				break;
 			default:
-				this->deferred_data.assign(data, data + data_size);
+				this->deferred_data.assign(data_span.begin(), data_span.end());
 				break;
 		}
 	}
@@ -169,8 +172,8 @@ VkDeviceSize texture_2d::staging_size() const
 
 void texture_2d::record_upload_commands(VkCommandBuffer cmd, VkBuffer staging_buffer, VkDeviceSize offset)
 {
-	const uint32_t w = static_cast<uint32_t>(this->dims().x());
-	const uint32_t h = static_cast<uint32_t>(this->dims().y());
+	const auto w = static_cast<uint32_t>(this->dims().x());
+	const auto h = static_cast<uint32_t>(this->dims().y());
 
 	// transition to transfer dst
 	const auto dst_barrier = VkImageMemoryBarrier{
@@ -242,8 +245,8 @@ void texture_2d::ensure_uploaded()
 	if (this->deferred_data.empty()) {
 		// no data to upload: clear the image to transparent so that
 		// undefined GPU memory does not produce garbage pixels
-		auto& ctx = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-			const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
+		// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, cppcoreguidelines-pro-type-static-cast-downcast, "the context is owned by the renderer; the const qualifier comes from the shared_ref<const context> API")
+		auto& ctx = const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
 		ctx.one_shot([&](VkCommandBuffer cmd) {
 			const auto range = VkImageSubresourceRange{
 				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -313,8 +316,8 @@ void texture_2d::ensure_uploaded()
 
 texture_2d::~texture_2d()
 {
-	auto& ctx = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-		const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
+	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, cppcoreguidelines-pro-type-static-cast-downcast, "the context is owned by the renderer; the const qualifier comes from the shared_ref<const context> API")
+	auto& ctx = const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
 	// remove from the context's texture list
 	auto& tex_list = ctx.all_textures;
 	for (auto it = tex_list.begin(); it != tex_list.end(); ++it) {
@@ -333,14 +336,15 @@ texture_2d::~texture_2d()
 
 void texture_2d::create_image(rasterimage::dimensioned::dimensions_type dims)
 {
-	auto& ctx = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-		const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
+	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, cppcoreguidelines-pro-type-static-cast-downcast, "the context is owned by the renderer; the const qualifier comes from the shared_ref<const context> API")
+	auto& ctx = const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
 
 	VkImageCreateInfo image_info{};
 	image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	image_info.imageType = VK_IMAGE_TYPE_2D;
 	image_info.format = this->format;
-	image_info.extent = {static_cast<uint32_t>(dims.x()), static_cast<uint32_t>(dims.y()), 1};
+	image_info
+		.extent = {.width = static_cast<uint32_t>(dims.x()), .height = static_cast<uint32_t>(dims.y()), .depth = 1};
 	image_info.mipLevels = 1;
 	image_info.arrayLayers = 1;
 	image_info.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -382,8 +386,8 @@ void texture_2d::create_image(rasterimage::dimensioned::dimensions_type dims)
 
 void texture_2d::create_sampler(ruis::render::context::texture_2d_parameters params)
 {
-	auto& ctx = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-		const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
+	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, cppcoreguidelines-pro-type-static-cast-downcast, "the context is owned by the renderer; the const qualifier comes from the shared_ref<const context> API")
+	auto& ctx = const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
 	(void)ctx;
 
 	const auto sampler_info = VkSamplerCreateInfo{
@@ -411,16 +415,16 @@ void texture_2d::create_sampler(ruis::render::context::texture_2d_parameters par
 
 void texture_2d::upload_data(const uint8_t* data, size_t data_size)
 {
-	auto& ctx = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-		const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
+	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, cppcoreguidelines-pro-type-static-cast-downcast, "the context is owned by the renderer; the const qualifier comes from the shared_ref<const context> API")
+	auto& ctx = const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
 
 	VkBuffer staging_buffer = VK_NULL_HANDLE;
 	VkDeviceMemory staging_memory = VK_NULL_HANDLE;
 	create_staging_buffer(ctx.device, ctx.physical_device, data, data_size, staging_buffer, staging_memory);
 
 	ctx.one_shot([&](VkCommandBuffer cmd) {
-		const uint32_t w = static_cast<uint32_t>(this->dims().x());
-		const uint32_t h = static_cast<uint32_t>(this->dims().y());
+		const auto w = static_cast<uint32_t>(this->dims().x());
+		const auto h = static_cast<uint32_t>(this->dims().y());
 
 		// transition to transfer dst
 		const auto dst_barrier = VkImageMemoryBarrier{
