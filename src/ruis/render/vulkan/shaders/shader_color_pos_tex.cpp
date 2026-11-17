@@ -21,6 +21,8 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 #include "shader_color_pos_tex.hpp"
 
+#include <iterator>
+
 #include "../texture_2d.hpp"
 
 #include "shader_spirv.hpp"
@@ -46,10 +48,10 @@ void shader_color_pos_tex::render(
 	vulkan_shader_render(
 		this->ctx_ref, //
 		shader_kind::color_pos_tex,
-		spirv_shader_color_pos_tex_vertex,
-		sizeof(spirv_shader_color_pos_tex_vertex) / sizeof(uint32_t),
-		spirv_shader_color_pos_tex_fragment,
-		sizeof(spirv_shader_color_pos_tex_fragment) / sizeof(uint32_t),
+		std::data(spirv_shader_color_pos_tex_vertex),
+		spirv_shader_color_pos_tex_vertex_size,
+		std::data(spirv_shader_color_pos_tex_fragment),
+		spirv_shader_color_pos_tex_fragment_size,
 		&vk_tex, //
 		m,
 		color,

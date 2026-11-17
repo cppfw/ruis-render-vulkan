@@ -21,6 +21,8 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 #include "shader_color_pos_lum.hpp"
 
+#include <iterator>
+
 #include "shader_spirv.hpp"
 
 using namespace ruis::render::vulkan;
@@ -39,10 +41,10 @@ void shader_color_pos_lum::render(
 	vulkan_shader_render(
 		this->ctx_ref, //
 		shader_kind::color_pos_lum,
-		spirv_shader_color_pos_lum_vertex,
-		sizeof(spirv_shader_color_pos_lum_vertex) / sizeof(uint32_t),
-		spirv_shader_color_pos_lum_fragment,
-		sizeof(spirv_shader_color_pos_lum_fragment) / sizeof(uint32_t),
+		std::data(spirv_shader_color_pos_lum_vertex),
+		spirv_shader_color_pos_lum_vertex_size,
+		std::data(spirv_shader_color_pos_lum_fragment),
+		spirv_shader_color_pos_lum_fragment_size,
 		nullptr, // no texture
 		m,
 		color,

@@ -51,6 +51,8 @@ public:
 
 	vulkan_device(const vulkan_device&) = delete;
 	vulkan_device& operator=(const vulkan_device&) = delete;
+	vulkan_device(vulkan_device&&) = delete;
+	vulkan_device& operator=(vulkan_device&&) = delete;
 
 	// create the Vulkan device
 	static std::unique_ptr<vulkan_device> make(

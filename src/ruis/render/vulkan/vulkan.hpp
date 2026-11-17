@@ -21,6 +21,8 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -38,28 +40,22 @@ inline void vk_error(VkResult res, const char* where)
 	throw std::runtime_error(std::string("vulkan error (") + std::to_string(int(res)) + ") at " + where);
 }
 
-#define VU_CHECK(x) \
-	do { \
-		auto vu_check_res = (x); \
-		if (vu_check_res != VK_SUCCESS) { \
-			ruis::render::vulkan::vk_error(vu_check_res, #x); \
-		} \
-	} while (false)
-
-// helper macro: call vkCreate<TypeName> and check the result
-// Usage: VU_CREATE(VkFence, device, &info)
-#define VU_CREATE(type_name, ...) \
-	{ \
-		type_name _vu_h{}; \
-		VU_CHECK(vkCreate##type_name(__VA_ARGS__, nullptr, &_vu_h)); \
-		_vu_h \
+// checks a VkResult and throws on failure
+inline void check_vk_result(VkResult res, const char* where)
+{
+	if (res != VK_SUCCESS) {
+		vk_error(res, where);
 	}
+}
+
+// checks the result of a Vulkan call
+#define VU_CHECK(x) ::ruis::render::vulkan::check_vk_result((x), #x)
 
 // converts a ruis render blend factor to a VkBlendFactor
 inline VkBlendFactor to_vk_blend_factor(ruis::render::context::blend_factor f)
 {
 	using bf = ruis::render::context::blend_factor;
-	static constexpr VkBlendFactor table[] = {
+	static constexpr std::array<VkBlendFactor, size_t(bf::enum_size)> table = {
 		VK_BLEND_FACTOR_ZERO, // zero
 		VK_BLEND_FACTOR_ONE, // one
 		VK_BLEND_FACTOR_SRC_COLOR, // src_color
@@ -76,7 +72,6 @@ inline VkBlendFactor to_vk_blend_factor(ruis::render::context::blend_factor f)
 		VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA, // one_minus_constant_alpha
 		VK_BLEND_FACTOR_SRC_ALPHA_SATURATE, // src_alpha_saturate
 	};
-	static_assert(sizeof(table) / sizeof(table[0]) == size_t(bf::enum_size));
 	return table[size_t(f)];
 }
 
@@ -162,24 +157,30 @@ inline uint32_t pick_host_visible_memory_type(VkPhysicalDevice phys, const VkMem
 	throw std::runtime_error("no suitable host-visible memory type found");
 }
 
+inline constexpr size_t matrix4_float_count = 16;
+inline constexpr size_t vec4_float_count = 4;
+
 struct draw_uniforms {
-	float matrix[16];
-	float color[4];
+	std::array<float, matrix4_float_count> matrix{};
+	std::array<float, vec4_float_count> color{};
 };
 
-static_assert(sizeof(draw_uniforms) == 80, "draw_uniforms size mismatch");
+static_assert(
+	sizeof(draw_uniforms) == sizeof(float) * (matrix4_float_count + vec4_float_count), //
+	"draw_uniforms must be tightly packed"
+);
 
 /**
  * @brief Convert a row-major r4 4x4 matrix (as stored by r4::matrix4) to the
  * column-major layout expected by a GLSL mat4 uniform.
  */
-inline void write_matrix_column_major(float out[16], const r4::matrix4<float>& m)
+inline void write_matrix_column_major(std::array<float, matrix4_float_count>& out, const r4::matrix4<float>& m)
 {
-	// r4 stores the matrix row-major: m(r, c) at index r*4 + c
-	for (int r = 0; r < 4; ++r) {
-		for (int c = 0; c < 4; ++c) {
+	// r4 stores the matrix row-major: element (r, c) at index r*4 + c
+	for (size_t r = 0; r < vec4_float_count; ++r) {
+		for (size_t c = 0; c < vec4_float_count; ++c) {
 			// column-major: element (r, c) goes to index c*4 + r
-			out[c * 4 + r] = m[r][c];
+			out[vec4_float_count * c + r] = m[r][c];
 		}
 	}
 }

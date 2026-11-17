@@ -84,7 +84,7 @@ std::unique_ptr<vulkan_device> vulkan_device::make(
 )
 {
 	if (device_extensions.empty()) {
-		device_extensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+		device_extensions.emplace_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
 	}
 
 	auto ret = std::unique_ptr<vulkan_device>(new vulkan_device());

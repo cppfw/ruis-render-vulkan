@@ -71,6 +71,7 @@ index_buffer::index_buffer(
 
 index_buffer::~index_buffer()
 {
+	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the renderer owns the object; the base-class reference comes from the ruis API")
 	auto& ctx = static_cast<const context&>(this->ctx_ref.get());
 	if (this->buffer != VK_NULL_HANDLE) {
 		vkDestroyBuffer(ctx.device, this->buffer, nullptr);
@@ -84,6 +85,7 @@ void index_buffer::create_vk_buffer(const void* data, size_t size_bytes)
 		return;
 	}
 
+	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the renderer owns the object; the base-class reference comes from the ruis API")
 	auto& ctx = static_cast<const context&>(this->ctx_ref.get());
 
 	const auto buffer_info = VkBufferCreateInfo{

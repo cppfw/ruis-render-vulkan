@@ -39,6 +39,7 @@ vertex_buffer::vertex_buffer(
 
 vertex_buffer::~vertex_buffer()
 {
+	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the renderer owns the object; the base-class reference comes from the ruis API")
 	auto& ctx = static_cast<const context&>(this->ctx_ref.get());
 	if (this->buffer != VK_NULL_HANDLE) {
 		vkDestroyBuffer(ctx.device, this->buffer, nullptr);
@@ -46,12 +47,16 @@ vertex_buffer::~vertex_buffer()
 	}
 }
 
-void vertex_buffer::create_vk_buffer(std::vector<float>&& data)
+void vertex_buffer::create_vk_buffer(
+	// NOLINTNEXTLINE(cppcoreguidelines-rvalue-reference-param-not-moved, "consumed by value: the copy is destroyed at end of scope")
+	std::vector<float>&& data
+)
 {
 	if (data.empty()) {
 		return;
 	}
 
+	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the renderer owns the object; the base-class reference comes from the ruis API")
 	auto& ctx = static_cast<const context&>(this->ctx_ref.get());
 
 	this->byte_size = uint32_t(data.size() * sizeof(float));

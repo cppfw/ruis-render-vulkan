@@ -31,6 +31,7 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 namespace ruis::render::vulkan {
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays, \"auto-generated SPIR-V byte array\")
 static const uint32_t spirv_shader_color_vertex[] = {
 	119734787,  65536,      851979,     29,         0,          131089,     1,          393227,     1,
 	1280527431, 1685353262, 808793134,  0,          196622,     0,          1,          458767,     0,
@@ -66,6 +67,7 @@ static const uint32_t spirv_shader_color_vertex[] = {
 };
 static const size_t spirv_shader_color_vertex_size = 277;
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays, \"auto-generated SPIR-V byte array\")
 static const uint32_t spirv_shader_color_fragment[] = {
 	119734787,  65536,      851979,     19,         0,          131089,     1,          393227,     1,
 	1280527431, 1685353262, 808793134,  0,          196622,     0,          1,          393231,     4,
@@ -90,6 +92,7 @@ static const uint32_t spirv_shader_color_fragment[] = {
 };
 static const size_t spirv_shader_color_fragment_size = 178;
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays, \"auto-generated SPIR-V byte array\")
 static const uint32_t spirv_shader_pos_clr_vertex[] = {
 	119734787,  65536,      851979,     32,         0,          131089,     1,          393227,     1,
 	1280527431, 1685353262, 808793134,  0,          196622,     0,          1,          589839,     0,
@@ -129,6 +132,7 @@ static const uint32_t spirv_shader_pos_clr_vertex[] = {
 };
 static const size_t spirv_shader_pos_clr_vertex_size = 310;
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays, \"auto-generated SPIR-V byte array\")
 static const uint32_t spirv_shader_pos_clr_fragment[] = {
 	119734787,  65536,      851979,    13,         0,          131089,     1,          393227,     1,
 	1280527431, 1685353262, 808793134, 0,          196622,     0,          1,          458767,     4,
@@ -146,6 +150,7 @@ static const uint32_t spirv_shader_pos_clr_fragment[] = {
 };
 static const size_t spirv_shader_pos_clr_fragment_size = 113;
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays, \"auto-generated SPIR-V byte array\")
 static const uint32_t spirv_shader_pos_tex_vertex[] = {
 	119734787,  65536,      851979,     35,         0,          131089,     1,          393227,     1,
 	1280527431, 1685353262, 808793134,  0,          196622,     0,          1,          589839,     0,
@@ -186,6 +191,7 @@ static const uint32_t spirv_shader_pos_tex_vertex[] = {
 };
 static const size_t spirv_shader_pos_tex_vertex_size = 320;
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays, \"auto-generated SPIR-V byte array\")
 static const uint32_t spirv_shader_pos_tex_fragment[] = {
 	119734787,  65536,      851979,    30,         0,          131089,     1,          393227,     1,
 	1280527431, 1685353262, 808793134, 0,          196622,     0,          1,          458767,     4,
@@ -218,6 +224,7 @@ static const uint32_t spirv_shader_pos_tex_fragment[] = {
 };
 static const size_t spirv_shader_pos_tex_fragment_size = 249;
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays, \"auto-generated SPIR-V byte array\")
 static const uint32_t spirv_shader_color_pos_tex_vertex[] = {
 	119734787,  65536,      851979,     35,         0,          131089,     1,          393227,     1,
 	1280527431, 1685353262, 808793134,  0,          196622,     0,          1,          589839,     0,
@@ -258,6 +265,7 @@ static const uint32_t spirv_shader_color_pos_tex_vertex[] = {
 };
 static const size_t spirv_shader_color_pos_tex_vertex_size = 320;
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays, \"auto-generated SPIR-V byte array\")
 static const uint32_t spirv_shader_color_pos_tex_fragment[] = {
 	119734787,  65536,      851979,    30,         0,          131089,     1,          393227,     1,
 	1280527431, 1685353262, 808793134, 0,          196622,     0,          1,          458767,     4,
@@ -290,6 +298,7 @@ static const uint32_t spirv_shader_color_pos_tex_fragment[] = {
 };
 static const size_t spirv_shader_color_pos_tex_fragment_size = 249;
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays, \"auto-generated SPIR-V byte array\")
 static const uint32_t spirv_shader_color_pos_tex_alpha_vertex[] = {
 	119734787,  65536,      851979,     35,         0,          131089,     1,          393227,     1,
 	1280527431, 1685353262, 808793134,  0,          196622,     0,          1,          589839,     0,
@@ -330,6 +339,7 @@ static const uint32_t spirv_shader_color_pos_tex_alpha_vertex[] = {
 };
 static const size_t spirv_shader_color_pos_tex_alpha_vertex_size = 320;
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays, \"auto-generated SPIR-V byte array\")
 static const uint32_t spirv_shader_color_pos_tex_alpha_fragment[] = {
 	119734787,  65536,      851979,     43,         0,          131089,     1,          393227,     1,
 	1280527431, 1685353262, 808793134,  0,          196622,     0,          1,          458767,     4,
@@ -369,6 +379,7 @@ static const uint32_t spirv_shader_color_pos_tex_alpha_fragment[] = {
 };
 static const size_t spirv_shader_color_pos_tex_alpha_fragment_size = 312;
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays, \"auto-generated SPIR-V byte array\")
 static const uint32_t spirv_shader_color_pos_lum_vertex[] = {
 	119734787,  65536,      851979,     34,         0,          131089,     1,          393227,     1,
 	1280527431, 1685353262, 808793134,  0,          196622,     0,          1,          589839,     0,
@@ -409,6 +420,7 @@ static const uint32_t spirv_shader_color_pos_lum_vertex[] = {
 };
 static const size_t spirv_shader_color_pos_lum_vertex_size = 316;
 
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays, \"auto-generated SPIR-V byte array\")
 static const uint32_t spirv_shader_color_pos_lum_fragment[] = {
 	119734787,  65536,      851979,     35,         0,          131089,     1,          393227,     1,
 	1280527431, 1685353262, 808793134,  0,          196622,     0,          1,          458767,     4,
