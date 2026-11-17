@@ -1335,7 +1335,10 @@ void context::one_shot(std::function<void(VkCommandBuffer)> cmd)
 		.signalSemaphoreCount = 0,
 		.pSignalSemaphores = nullptr
 	};
-	VU_CHECK(vkQueueSubmit(this->queue, 1, &submit_info, nullptr));
+	// VK_NULL_HANDLE instead of nullptr: on 32-bit targets the Vulkan headers
+	// define non-dispatchable handles (VkFence, VkSemaphore, ...) as 64-bit
+	// integers, not pointers
+	VU_CHECK(vkQueueSubmit(this->queue, 1, &submit_info, VK_NULL_HANDLE));
 
 	// wait for the command buffer to complete, so the caller can safely use the
 	// uploaded resources right away (e.g. sample the texture in the current frame)
