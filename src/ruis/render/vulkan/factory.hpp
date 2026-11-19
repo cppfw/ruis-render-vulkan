@@ -71,10 +71,7 @@ public:
 	VkQueue queue = VK_NULL_HANDLE;
 	VkInstance instance = VK_NULL_HANDLE;
 
-	factory(
-		const utki::shared_ref<ruis::render::native_window>& native_window, //
-		const utki::shared_ref<const surface_provider>& surface_provider
-	);
+	factory(const utki::shared_ref<const surface_provider>& surface_provider);
 	~factory() override;
 
 	// noncopyable: owns the shared GPU resources

@@ -38,17 +38,12 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 using namespace ruis::render::vulkan;
 
-factory::factory(
-	const utki::shared_ref<ruis::render::native_window>& native_window, //
-	const utki::shared_ref<const surface_provider>& surface_provider
-) :
+factory::factory(const utki::shared_ref<const surface_provider>& surface_provider) : //
 	device(surface_provider.get().get_device()), //
 	physical_device(surface_provider.get().get_physical_device()), //
 	queue(surface_provider.get().get_queue()), //
 	instance(surface_provider.get().get_instance())
 {
-	(void)native_window;
-
 	// ---- one-shot command submission resources (shared: used for texture uploads) ----
 	{
 		const auto pool_info = VkCommandPoolCreateInfo{
