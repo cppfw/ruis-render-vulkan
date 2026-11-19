@@ -41,12 +41,12 @@ public:
 	rasterimage::format ri_format = rasterimage::format::rgba;
 
 	texture_2d(
-		const utki::shared_ref<const ruis::render::context>& rendering_context, //
+		const utki::shared_ref<const ruis::render::factory>& rendering_context, //
 		rasterimage::format type,
 		rasterimage::dimensioned::dimensions_type dims,
 		const uint8_t* data,
 		size_t data_size,
-		ruis::render::context::texture_2d_parameters params
+		ruis::render::factory::texture_2d_parameters params
 	);
 
 	// upload the data after the swapchain is ready
@@ -60,10 +60,10 @@ public:
 	~texture_2d() override;
 
 private:
-	const utki::shared_ref<const ruis::render::context> ctx_ref;
+	const utki::shared_ref<const ruis::render::factory> ctx_ref;
 	void create_image(rasterimage::dimensioned::dimensions_type dims);
 	void upload_data(const uint8_t* data, size_t data_size);
-	void create_sampler(ruis::render::context::texture_2d_parameters params);
+	void create_sampler(ruis::render::factory::texture_2d_parameters params);
 
 	// deferred upload (public for batched upload in context)
 

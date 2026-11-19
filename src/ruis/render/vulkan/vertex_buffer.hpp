@@ -53,7 +53,7 @@ public:
 	uint32_t byte_size = 0;
 
 	vertex_buffer(
-		const utki::shared_ref<const ruis::render::context>& rendering_context, //
+		const utki::shared_ref<const ruis::render::factory>& rendering_context, //
 		std::vector<float>&& padded_data
 	);
 
@@ -65,7 +65,7 @@ public:
 	~vertex_buffer() override;
 
 private:
-	const utki::shared_ref<const ruis::render::context> ctx_ref;
+	const utki::shared_ref<const ruis::render::factory> ctx_ref;
 	void create_vk_buffer(std::vector<float>&& data);
 };
 

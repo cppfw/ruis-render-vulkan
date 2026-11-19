@@ -105,10 +105,12 @@ VkPresentModeKHR pick_present_mode(VkPhysicalDevice phys, VkSurfaceKHR surface, 
 
 context::context(
 	const utki::shared_ref<ruis::render::native_window>& native_window, //
-	const utki::shared_ref<const surface_provider>& surface_provider
+	const utki::shared_ref<const surface_provider>& surface_provider, //
+	const utki::shared_ref<const ruis::render::vulkan::factory>& factory
 ) :
 	ruis::render::context(
 		native_window,
+		factory,
 		[] {
 			r4::matrix4<float> m{};
 			// maps the framework's normalized viewport coordinates (x right, y down,
@@ -125,6 +127,7 @@ context::context(
 			return parameters{m};
 		}()
 	),
+	vu_factory(factory), //
 	physical_device(surface_provider.get().get_physical_device()), //
 	device(surface_provider.get().get_device()), //
 	surface_provider_ref(surface_provider), //
@@ -156,31 +159,8 @@ context::context(
 		VU_CHECK(vkAllocateCommandBuffers(this->device, &alloc_info, &this->command_buffer));
 	}
 	{
-		const auto pool_info = VkCommandPoolCreateInfo{
-			.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-			.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-			.queueFamilyIndex = 0
-		};
-		{
-			VU_CHECK(vkCreateCommandPool(this->device, &pool_info, nullptr, &this->one_shot_pool));
-		}
-
-		const auto alloc_info = VkCommandBufferAllocateInfo{
-			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-			.commandPool = this->one_shot_pool,
-			.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-			.commandBufferCount = 1
-		};
-		VU_CHECK(vkAllocateCommandBuffers(this->device, &alloc_info, &this->one_shot_command_buffer));
-	}
-	{
 		const auto fence_info = VkFenceCreateInfo{.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
-		{
-			VU_CHECK(vkCreateFence(this->device, &fence_info, nullptr, &this->frame_fence));
-		}
-		{
-			VU_CHECK(vkCreateFence(this->device, &fence_info, nullptr, &this->one_shot_fence));
-		}
+		VU_CHECK(vkCreateFence(this->device, &fence_info, nullptr, &this->frame_fence));
 	}
 	{
 		const auto sem_info = VkSemaphoreCreateInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
@@ -206,64 +186,6 @@ context::context(
 		{
 			VU_CHECK(vkCreateDescriptorPool(this->device, &pool_info, nullptr, &this->descriptor_pool));
 		}
-	}
-
-	// ---- descriptor set layouts + pipeline layouts ----
-	{
-		// the UBO is read from both the vertex shader (matrix) and the fragment
-		// shader (color), so both stages must be in the stage flags
-		const auto ubo_binding = VkDescriptorSetLayoutBinding{
-			.binding = 0,
-			.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-			.descriptorCount = 1,
-			.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
-		};
-		{
-			const auto dsl_info = VkDescriptorSetLayoutCreateInfo{
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-				.bindingCount = 1,
-				.pBindings = &ubo_binding
-			};
-			VU_CHECK(vkCreateDescriptorSetLayout(this->device, &dsl_info, nullptr, &this->dsl_no_tex));
-		}
-
-		const auto with_tex_bindings = std::array<VkDescriptorSetLayoutBinding, 2>{
-			{ubo_binding,
-			 {.binding = 1,
-			  .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-			  .descriptorCount = 1,
-			  .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT}}
-		};
-		{
-			const auto dsl_info = VkDescriptorSetLayoutCreateInfo{
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-				.bindingCount = 2,
-				.pBindings = with_tex_bindings.data()
-			};
-			VU_CHECK(vkCreateDescriptorSetLayout(this->device, &dsl_info, nullptr, &this->dsl_with_tex));
-		}
-	}
-	{
-		{
-			const auto pl_info = VkPipelineLayoutCreateInfo{
-				.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-				.setLayoutCount = 1,
-				.pSetLayouts = &this->dsl_no_tex
-			};
-			VU_CHECK(vkCreatePipelineLayout(this->device, &pl_info, nullptr, &this->pipeline_layout_no_tex));
-		}
-		{
-			const auto pl_info = VkPipelineLayoutCreateInfo{
-				.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-				.setLayoutCount = 1,
-				.pSetLayouts = &this->dsl_with_tex
-			};
-			VU_CHECK(vkCreatePipelineLayout(this->device, &pl_info, nullptr, &this->pipeline_layout_with_tex));
-		}
-	}
-	{
-		const auto pc_info = VkPipelineCacheCreateInfo{.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
-		VU_CHECK(vkCreatePipelineCache(this->device, &pc_info, nullptr, &this->pipeline_cache));
 	}
 
 	// ---- per-draw uniform buffer ring ----
@@ -643,9 +565,6 @@ context::~context()
 	if (this->frame_fence != VK_NULL_HANDLE) {
 		vkDestroyFence(this->device, this->frame_fence, nullptr);
 	}
-	if (this->one_shot_fence != VK_NULL_HANDLE) {
-		vkDestroyFence(this->device, this->one_shot_fence, nullptr);
-	}
 	if (this->image_available_sem != VK_NULL_HANDLE) {
 		vkDestroySemaphore(this->device, this->image_available_sem, nullptr);
 	}
@@ -658,33 +577,11 @@ context::~context()
 	if (this->command_pool != VK_NULL_HANDLE) {
 		vkDestroyCommandPool(this->device, this->command_pool, nullptr);
 	}
-	if (this->one_shot_command_buffer != VK_NULL_HANDLE) {
-		vkFreeCommandBuffers(this->device, this->one_shot_pool, 1, &this->one_shot_command_buffer);
-	}
-	if (this->one_shot_pool != VK_NULL_HANDLE) {
-		vkDestroyCommandPool(this->device, this->one_shot_pool, nullptr);
-	}
-
 	// destroy pipelines
 	for (auto& [key, pipeline] : this->pipelines) {
 		vkDestroyPipeline(this->device, pipeline, nullptr);
 	}
 
-	if (this->pipeline_cache != VK_NULL_HANDLE) {
-		vkDestroyPipelineCache(this->device, this->pipeline_cache, nullptr);
-	}
-	if (this->pipeline_layout_no_tex != VK_NULL_HANDLE) {
-		vkDestroyPipelineLayout(this->device, this->pipeline_layout_no_tex, nullptr);
-	}
-	if (this->pipeline_layout_with_tex != VK_NULL_HANDLE) {
-		vkDestroyPipelineLayout(this->device, this->pipeline_layout_with_tex, nullptr);
-	}
-	if (this->dsl_no_tex != VK_NULL_HANDLE) {
-		vkDestroyDescriptorSetLayout(this->device, this->dsl_no_tex, nullptr);
-	}
-	if (this->dsl_with_tex != VK_NULL_HANDLE) {
-		vkDestroyDescriptorSetLayout(this->device, this->dsl_with_tex, nullptr);
-	}
 	if (this->descriptor_pool != VK_NULL_HANDLE) {
 		vkDestroyDescriptorPool(this->device, this->descriptor_pool, nullptr);
 	}
@@ -750,179 +647,6 @@ context::~context()
 		vkDestroySwapchainKHR(this->device, this->swapchain, nullptr);
 	}
 	this->swapchain_images.clear();
-}
-
-// ===============================
-// = factory functions =
-
-utki::shared_ref<ruis::render::context::shaders> context::make_shaders() const
-{
-	auto ret = utki::make_shared<ruis::render::context::shaders>();
-	// NOLINTNEXTLINE(bugprone-unused-return-value, "false positive")
-	ret.get().pos_tex = std::make_unique<shader_pos_tex>(this->get_shared_ref());
-	// NOLINTNEXTLINE(bugprone-unused-return-value, "false positive")
-	ret.get().color_pos = std::make_unique<shader_color>(this->get_shared_ref());
-	// NOLINTNEXTLINE(bugprone-unused-return-value, "false positive")
-	ret.get().pos_clr = std::make_unique<shader_pos_clr>(this->get_shared_ref());
-	// NOLINTNEXTLINE(bugprone-unused-return-value, "false positive")
-	ret.get().color_pos_tex = std::make_unique<shader_color_pos_tex>(this->get_shared_ref());
-	// NOLINTNEXTLINE(bugprone-unused-return-value, "false positive")
-	ret.get().color_pos_tex_alpha = std::make_unique<shader_color_pos_tex_alpha>(this->get_shared_ref());
-	// NOLINTNEXTLINE(bugprone-unused-return-value, "false positive")
-	ret.get().color_pos_lum = std::make_unique<shader_color_pos_lum>(this->get_shared_ref());
-	return ret;
-}
-
-utki::shared_ref<ruis::render::texture_2d> context::make_texture_2d(
-	rasterimage::format format,
-	rasterimage::dimensioned::dimensions_type dims,
-	texture_2d_parameters params
-) const
-{
-	return utki::make_shared<texture_2d>(this->get_shared_ref(), format, dims, nullptr, 0, params);
-}
-
-utki::shared_ref<ruis::render::texture_2d> context::make_texture_2d(
-	const rasterimage::image_variant& imvar,
-	texture_2d_parameters params
-) const
-{
-	// Not supported (need rvalue reference to move the data)
-	throw std::logic_error("vulkan make_texture_2d: const image_variant not supported");
-}
-
-utki::shared_ref<ruis::render::texture_2d> context::make_texture_2d(
-	rasterimage::image_variant&& imvar, //
-	texture_2d_parameters params
-) const
-{
-	auto iv = std::move(imvar);
-	return std::visit(
-		[this, &imvar = iv, &params](auto&& im) -> utki::shared_ref<ruis::render::texture_2d> {
-			if constexpr (sizeof(im.pixels().front().front()) != 1) {
-				throw std::logic_error("vulkan make_texture_2d: non-8bit images are not supported");
-			} else {
-				// NOTE: do NOT flip_vertical() here. Unlike OpenGL (texture origin at
-				// bottom-left), Vulkan's image row 0 is the top of the texture, so the
-				// top-to-bottom image data must be uploaded as-is.
-				auto data = im.pixels();
-				return utki::make_shared<texture_2d>(
-					this->get_shared_ref(), //
-					imvar.get_format(),
-					im.dims(),
-					data.front().data(),
-					data.size_bytes(),
-					std::move(params)
-				);
-			}
-		},
-		iv.variant
-	);
-}
-
-utki::shared_ref<ruis::render::texture_depth> context::make_texture_depth(rasterimage::dimensioned::dimensions_type dims
-) const
-{
-	return utki::make_shared<texture_depth>(this->get_shared_ref(), dims);
-}
-
-utki::shared_ref<ruis::render::texture_cube> context::make_texture_cube(
-	// NOLINTNEXTLINE(cppcoreguidelines-rvalue-reference-param-not-moved, "unimplemented stub: signature must match the base class")
-	rasterimage::image_variant&& positive_x, //
-	// NOLINTNEXTLINE(cppcoreguidelines-rvalue-reference-param-not-moved, "unimplemented stub: signature must match the base class")
-	rasterimage::image_variant&& negative_x, //
-	// NOLINTNEXTLINE(cppcoreguidelines-rvalue-reference-param-not-moved, "unimplemented stub: signature must match the base class")
-	rasterimage::image_variant&& positive_y, //
-	// NOLINTNEXTLINE(cppcoreguidelines-rvalue-reference-param-not-moved, "unimplemented stub: signature must match the base class")
-	rasterimage::image_variant&& negative_y, //
-	// NOLINTNEXTLINE(cppcoreguidelines-rvalue-reference-param-not-moved, "unimplemented stub: signature must match the base class")
-	rasterimage::image_variant&& positive_z, //
-	// NOLINTNEXTLINE(cppcoreguidelines-rvalue-reference-param-not-moved, "unimplemented stub: signature must match the base class")
-	rasterimage::image_variant&& negative_z //
-) const
-{
-	(void)positive_x;
-	(void)negative_x;
-	(void)positive_y;
-	(void)negative_y;
-	(void)positive_z;
-	(void)negative_z;
-	throw std::runtime_error("vulkan make_texture_cube: not implemented");
-}
-
-utki::shared_ref<ruis::render::vertex_buffer> context::make_vertex_buffer(utki::span<const r4::vector4<float>> vertices
-) const
-{
-	std::vector<float> padded;
-	padded.reserve(vertices.size() * 4);
-	for (const auto& v : vertices) {
-		padded.push_back(v.x());
-		padded.push_back(v.y());
-		padded.push_back(v.z());
-		padded.push_back(v.w());
-	}
-	return utki::make_shared<vertex_buffer>(this->get_shared_ref(), std::move(padded));
-}
-
-utki::shared_ref<ruis::render::vertex_buffer> context::make_vertex_buffer(utki::span<const r4::vector3<float>> vertices
-) const
-{
-	std::vector<float> padded;
-	padded.reserve(vertices.size() * 4);
-	for (const auto& v : vertices) {
-		padded.push_back(v.x());
-		padded.push_back(v.y());
-		padded.push_back(v.z());
-		padded.push_back(1.0f);
-	}
-	return utki::make_shared<vertex_buffer>(this->get_shared_ref(), std::move(padded));
-}
-
-utki::shared_ref<ruis::render::vertex_buffer> context::make_vertex_buffer(utki::span<const r4::vector2<float>> vertices
-) const
-{
-	std::vector<float> padded;
-	padded.reserve(vertices.size() * 4);
-	for (const auto& v : vertices) {
-		padded.push_back(v.x());
-		padded.push_back(v.y());
-		padded.push_back(0.0f);
-		padded.push_back(1.0f);
-	}
-	return utki::make_shared<vertex_buffer>(this->get_shared_ref(), std::move(padded));
-}
-
-utki::shared_ref<ruis::render::vertex_buffer> context::make_vertex_buffer(utki::span<const float> vertices) const
-{
-	// a flat list of floats: interpreted as 4-component vertices
-	const auto count = vertices.size() / 4;
-	std::vector<float> padded(vertices.begin(), vertices.end());
-	(void)count;
-	return utki::make_shared<vertex_buffer>(this->get_shared_ref(), std::move(padded));
-}
-
-utki::shared_ref<ruis::render::index_buffer> context::make_index_buffer(utki::span<const uint16_t> indices) const
-{
-	return utki::make_shared<index_buffer>(this->get_shared_ref(), indices);
-}
-
-utki::shared_ref<ruis::render::index_buffer> context::make_index_buffer(utki::span<const uint32_t> indices) const
-{
-	return utki::make_shared<index_buffer>(this->get_shared_ref(), indices);
-}
-
-utki::shared_ref<ruis::render::vertex_array> context::make_vertex_array(
-	std::vector<utki::shared_ref<const ruis::render::vertex_buffer>> buffers, //
-	utki::shared_ref<const ruis::render::index_buffer> indices,
-	ruis::render::vertex_array::mode rendering_mode
-) const
-{
-	return utki::make_shared<vertex_array>(
-		this->get_shared_ref(),
-		std::move(buffers),
-		std::move(indices),
-		rendering_mode
-	);
 }
 
 utki::shared_ref<ruis::render::frame_buffer> context::make_framebuffer( //
@@ -1173,7 +897,7 @@ VkDescriptorSet context::allocate_descriptor_set(
 	VkSampler sampler
 )
 {
-	const auto dsl = textured ? this->dsl_with_tex : this->dsl_no_tex;
+	const auto dsl = textured ? this->vu_factory.get().get_dsl_with_tex() : this->vu_factory.get().get_dsl_no_tex();
 
 	VkDescriptorSet set = VK_NULL_HANDLE;
 	const auto alloc_info = VkDescriptorSetAllocateInfo{
@@ -1305,134 +1029,6 @@ void context::draw_indexed(
 	const auto& vk_indices = static_cast<const index_buffer&>(va.indices.get());
 	vkCmdBindIndexBuffer(this->command_buffer, vk_indices.buffer, 0, vk_indices.index_type);
 	vkCmdDrawIndexed(this->command_buffer, uint32_t(vk_indices.elements_count), 1, 0, 0, 0);
-}
-
-void context::one_shot(std::function<void(VkCommandBuffer)> cmd)
-{
-	// wait for all previously submitted work on the queue to complete. vkQueueWaitIdle is
-	// used instead of vkWaitForFences because the AMD driver does not respect the
-	// timeout parameter of vkWaitForFences, which deadlocks when waiting for a fence
-	// that was never submitted (e.g. the first call).
-	vkQueueWaitIdle(this->queue);
-
-	VU_CHECK(vkResetCommandBuffer(this->one_shot_command_buffer, 0));
-	const auto begin_info = VkCommandBufferBeginInfo{
-		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-		.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
-	};
-	VU_CHECK(vkBeginCommandBuffer(this->one_shot_command_buffer, &begin_info));
-
-	cmd(this->one_shot_command_buffer);
-
-	VU_CHECK(vkEndCommandBuffer(this->one_shot_command_buffer));
-
-	const auto submit_info = VkSubmitInfo{
-		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-		.waitSemaphoreCount = 0,
-		.pWaitSemaphores = nullptr,
-		.commandBufferCount = 1,
-		.pCommandBuffers = &this->one_shot_command_buffer,
-		.signalSemaphoreCount = 0,
-		.pSignalSemaphores = nullptr
-	};
-	// VK_NULL_HANDLE instead of nullptr: on 32-bit targets the Vulkan headers
-	// define non-dispatchable handles (VkFence, VkSemaphore, ...) as 64-bit
-	// integers, not pointers
-	VU_CHECK(vkQueueSubmit(this->queue, 1, &submit_info, VK_NULL_HANDLE));
-
-	// wait for the command buffer to complete, so the caller can safely use the
-	// uploaded resources right away (e.g. sample the texture in the current frame)
-	vkQueueWaitIdle(this->queue);
-}
-
-void context::ensure_textures_uploaded()
-{
-	// find textures that need uploading (no global flag: new textures can be created at any time)
-	std::vector<texture_2d*> pending;
-	for (auto* tex : this->all_textures) {
-		if (!tex->uploaded && !tex->deferred_data.empty()) {
-			pending.push_back(tex);
-		}
-	}
-
-	if (pending.empty()) {
-		// mark empty textures as uploaded
-		for (auto* tex : this->all_textures) {
-			if (!tex->uploaded && tex->deferred_data.empty()) {
-				tex->uploaded = true;
-			}
-		}
-		return;
-	}
-
-	// calculate total staging size
-	VkDeviceSize total_size = 0;
-	for (auto* tex : pending) {
-		total_size += tex->staging_size();
-	}
-
-	if (total_size == 0) {
-		return;
-	}
-
-	// create a single staging buffer for all textures
-	VkBuffer staging_buffer = VK_NULL_HANDLE;
-	VkDeviceMemory staging_memory = VK_NULL_HANDLE;
-	{
-		const auto buffer_info = VkBufferCreateInfo{
-			.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-			.size = total_size,
-			.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-			.sharingMode = VK_SHARING_MODE_EXCLUSIVE
-		};
-		VU_CHECK(vkCreateBuffer(this->device, &buffer_info, nullptr, &staging_buffer));
-
-		VkMemoryRequirements mem_reqs{};
-		vkGetBufferMemoryRequirements(this->device, staging_buffer, &mem_reqs);
-
-		VkPhysicalDeviceMemoryProperties props{};
-		vkGetPhysicalDeviceMemoryProperties(this->physical_device, &props);
-
-		const auto alloc_info = VkMemoryAllocateInfo{
-			.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-			.allocationSize = mem_reqs.size,
-			.memoryTypeIndex = pick_host_visible_memory_type(this->physical_device, mem_reqs)
-		};
-		VU_CHECK(vkAllocateMemory(this->device, &alloc_info, nullptr, &staging_memory));
-		VU_CHECK(vkBindBufferMemory(this->device, staging_buffer, staging_memory, 0));
-	}
-
-	// copy all texture data into the staging buffer
-	void* mapped = nullptr;
-	VU_CHECK(vkMapMemory(this->device, staging_memory, 0, total_size, 0, &mapped));
-	const auto mapped_span = utki::span<uint8_t>(static_cast<uint8_t*>(mapped), total_size);
-	VkDeviceSize offset = 0;
-	for (auto* tex : pending) {
-		const auto sz = tex->staging_size();
-		std::memcpy(mapped_span.subspan(offset, sz).data(), tex->deferred_data.data(), sz);
-		offset += sz;
-	}
-	vkUnmapMemory(this->device, staging_memory);
-
-	// record all upload commands into a single one-shot command buffer
-	VkDeviceSize cmd_offset = 0;
-	this->one_shot([&](VkCommandBuffer cmd) {
-		for (auto* tex : pending) {
-			const auto sz = tex->staging_size();
-			tex->record_upload_commands(cmd, staging_buffer, cmd_offset);
-			cmd_offset += sz;
-		}
-	});
-
-	// clean up
-	vkFreeMemory(this->device, staging_memory, nullptr);
-	vkDestroyBuffer(this->device, staging_buffer, nullptr);
-
-	// mark uploaded textures
-	for (auto* tex : pending) {
-		tex->deferred_data.clear();
-		tex->uploaded = true;
-	}
 }
 
 rasterimage::image_variant context::readback_framebuffer_color(const ruis::render::frame_buffer& fb)
@@ -1784,7 +1380,8 @@ VkPipeline context::build_pipeline(
 	};
 
 	// ---- layout ----
-	const auto layout = key.textured ? this->pipeline_layout_with_tex : this->pipeline_layout_no_tex;
+	const auto layout = key.textured ? this->vu_factory.get().get_pipeline_layout_with_tex()
+									 : this->vu_factory.get().get_pipeline_layout_no_tex();
 
 	// ---- multisample state ----
 	const auto multisample = VkPipelineMultisampleStateCreateInfo{
@@ -1812,7 +1409,14 @@ VkPipeline context::build_pipeline(
 	};
 
 	VkPipeline pipeline = VK_NULL_HANDLE;
-	VU_CHECK(vkCreateGraphicsPipelines(this->device, this->pipeline_cache, 1, &info, nullptr, &pipeline));
+	VU_CHECK(vkCreateGraphicsPipelines(
+		this->device,
+		this->vu_factory.get().get_pipeline_cache(),
+		1,
+		&info,
+		nullptr,
+		&pipeline
+	));
 
 	// destroy the shader modules (they are now baked into the pipeline)
 	vkDestroyShaderModule(this->device, vertex_stage.module, nullptr);
@@ -1831,7 +1435,7 @@ void context::begin_render_pass_internal(bool has_depth)
 		has_depth = true;
 	}
 	// ensure all textures are uploaded before the first render pass
-	this->ensure_textures_uploaded();
+	this->vu_factory.get().ensure_textures_uploaded();
 
 	// determine the render pass (clear or load)
 	const bool clear = this->pending_clear;

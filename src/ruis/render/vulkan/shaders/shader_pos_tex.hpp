@@ -31,13 +31,13 @@ namespace ruis::render::vulkan {
 class shader_pos_tex : public ruis::render::texturing_shader
 {
 public:
-	shader_pos_tex(const utki::shared_ref<const ruis::render::context>& rendering_context);
+	shader_pos_tex(const utki::shared_ref<const ruis::render::factory>& rendering_context);
 
 	void render(const r4::matrix4<float>& m, const ruis::render::vertex_array& va, const ruis::render::texture_2d& tex)
 		const override;
 
 private:
-	const utki::shared_ref<const ruis::render::context> ctx_ref;
+	const utki::shared_ref<const ruis::render::factory> ctx_ref;
 };
 
 } // namespace ruis::render::vulkan
