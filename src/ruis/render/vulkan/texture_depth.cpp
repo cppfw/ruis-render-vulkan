@@ -38,7 +38,7 @@ texture_depth::texture_depth(
 texture_depth::~texture_depth()
 {
 	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the renderer owns the object; the base-class reference comes from the ruis API")
-	auto& ctx = static_cast<const factory&>(this->ctx_ref.get());
+	auto& ctx = static_cast<const ruis::render::vulkan::factory&>(this->ctx_ref.get());
 	vkDestroyImageView(ctx.device, this->image_view, nullptr);
 	vkDestroyImage(ctx.device, this->image, nullptr);
 	if (this->memory != VK_NULL_HANDLE) {
@@ -49,7 +49,7 @@ texture_depth::~texture_depth()
 void texture_depth::create_image()
 {
 	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the renderer owns the object; the base-class reference comes from the ruis API")
-	auto& ctx = static_cast<const factory&>(this->ctx_ref.get());
+	auto& ctx = static_cast<const ruis::render::vulkan::factory&>(this->ctx_ref.get());
 
 	const auto image_info = VkImageCreateInfo{
 		.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
