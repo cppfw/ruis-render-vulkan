@@ -193,7 +193,7 @@ public:
 
 	// the render factory (shared across all windows): provides the device, the
 	// one-shot upload path, and the shared pipeline / descriptor set layouts
-	const utki::shared_ref<const ruis::render::vulkan::factory> vu_factory;
+	const utki::shared_ref<const ruis::render::vulkan::factory> factory;
 
 	// ---- vulkan core (used internally by this per-window context) ----
 	VkPhysicalDevice physical_device = VK_NULL_HANDLE;

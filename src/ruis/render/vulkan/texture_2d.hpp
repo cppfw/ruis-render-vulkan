@@ -41,7 +41,7 @@ public:
 	rasterimage::format ri_format = rasterimage::format::rgba;
 
 	texture_2d(
-		const utki::shared_ref<const ruis::render::factory>& rendering_context, //
+		utki::shared_ref<const ruis::render::factory> factory, //
 		rasterimage::format type,
 		rasterimage::dimensioned::dimensions_type dims,
 		const uint8_t* data,
@@ -60,7 +60,6 @@ public:
 	~texture_2d() override;
 
 private:
-	const utki::shared_ref<const ruis::render::factory> ctx_ref;
 	void create_image(rasterimage::dimensioned::dimensions_type dims);
 	void upload_data(const uint8_t* data, size_t data_size);
 	void create_sampler(ruis::render::factory::texture_2d_parameters params);

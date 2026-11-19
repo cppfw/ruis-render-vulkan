@@ -31,7 +31,7 @@ namespace ruis::render::vulkan {
 class shader_color_pos_tex : public ruis::render::coloring_texturing_shader
 {
 public:
-	shader_color_pos_tex(const utki::shared_ref<const ruis::render::factory>& rendering_context);
+	shader_color_pos_tex(utki::shared_ref<const ruis::render::factory> factory);
 
 	void render(
 		const r4::matrix4<float>& m,
@@ -39,9 +39,6 @@ public:
 		const r4::vector4<float>& color,
 		const ruis::render::texture_2d& tex
 	) const override;
-
-private:
-	const utki::shared_ref<const ruis::render::factory> ctx_ref;
 };
 
 } // namespace ruis::render::vulkan

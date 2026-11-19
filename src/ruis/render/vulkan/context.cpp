@@ -127,7 +127,7 @@ context::context(
 			return parameters{m};
 		}()
 	),
-	vu_factory(factory), //
+	factory(factory), //
 	physical_device(surface_provider.get().get_physical_device()), //
 	device(surface_provider.get().get_device()), //
 	surface_provider_ref(surface_provider), //
@@ -897,7 +897,7 @@ VkDescriptorSet context::allocate_descriptor_set(
 	VkSampler sampler
 )
 {
-	const auto dsl = textured ? this->vu_factory.get().get_dsl_with_tex() : this->vu_factory.get().get_dsl_no_tex();
+	const auto dsl = textured ? this->factory.get().get_dsl_with_tex() : this->factory.get().get_dsl_no_tex();
 
 	VkDescriptorSet set = VK_NULL_HANDLE;
 	const auto alloc_info = VkDescriptorSetAllocateInfo{
@@ -1380,8 +1380,8 @@ VkPipeline context::build_pipeline(
 	};
 
 	// ---- layout ----
-	const auto layout = key.textured ? this->vu_factory.get().get_pipeline_layout_with_tex()
-									 : this->vu_factory.get().get_pipeline_layout_no_tex();
+	const auto layout = key.textured ? this->factory.get().get_pipeline_layout_with_tex()
+									 : this->factory.get().get_pipeline_layout_no_tex();
 
 	// ---- multisample state ----
 	const auto multisample = VkPipelineMultisampleStateCreateInfo{
@@ -1409,14 +1409,9 @@ VkPipeline context::build_pipeline(
 	};
 
 	VkPipeline pipeline = VK_NULL_HANDLE;
-	VU_CHECK(vkCreateGraphicsPipelines(
-		this->device,
-		this->vu_factory.get().get_pipeline_cache(),
-		1,
-		&info,
-		nullptr,
-		&pipeline
-	));
+	VU_CHECK(
+		vkCreateGraphicsPipelines(this->device, this->factory.get().get_pipeline_cache(), 1, &info, nullptr, &pipeline)
+	);
 
 	// destroy the shader modules (they are now baked into the pipeline)
 	vkDestroyShaderModule(this->device, vertex_stage.module, nullptr);
@@ -1435,7 +1430,7 @@ void context::begin_render_pass_internal(bool has_depth)
 		has_depth = true;
 	}
 	// ensure all textures are uploaded before the first render pass
-	this->vu_factory.get().ensure_textures_uploaded();
+	this->factory.get().ensure_textures_uploaded();
 
 	// determine the render pass (clear or load)
 	const bool clear = this->pending_clear;

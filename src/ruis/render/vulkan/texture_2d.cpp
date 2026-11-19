@@ -92,7 +92,7 @@ void destroy_staging_buffer(VkDevice device, VkBuffer buffer, VkDeviceMemory mem
 } // namespace
 
 texture_2d::texture_2d(
-	const utki::shared_ref<const ruis::render::factory>& rendering_context, //
+	utki::shared_ref<const ruis::render::factory> factory, //
 	rasterimage::format type,
 	rasterimage::dimensioned::dimensions_type dims,
 	const uint8_t* data,
@@ -100,22 +100,19 @@ texture_2d::texture_2d(
 	ruis::render::factory::texture_2d_parameters params
 ) :
 	ruis::render::texture_2d(
-		rendering_context, //
+		std::move(factory), //
 		dims
 	),
 	format(to_vk_format_8bit(type)), //
-	ri_format(type), //
-	ctx_ref(rendering_context)
+	ri_format(type) //
 {
 	this->create_image(dims);
 	this->create_sampler(params);
 
-	// register with the context for deferred upload tracking
-	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, cppcoreguidelines-pro-type-static-cast-downcast, "the context is owned by the renderer; the const qualifier comes from the shared_ref<const context> API")
-	auto& vk_ctx = const_cast<ruis::render::vulkan::factory&>(
-		static_cast<const ruis::render::vulkan::factory&>(rendering_context.get())
-	);
-	vk_ctx.all_textures.push_back(this);
+	// register with the factory for deferred upload tracking
+	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the factory is owned by the renderer; the base-class reference comes from the ruis API")
+	const auto& vk_ctx = static_cast<const ruis::render::vulkan::factory&>(this->factory.get());
+	vk_ctx.register_texture(this);
 
 	if (data != nullptr && data_size != 0) {
 		// defer the upload until the swapchain is ready
@@ -247,10 +244,8 @@ void texture_2d::ensure_uploaded()
 	if (this->deferred_data.empty()) {
 		// no data to upload: clear the image to transparent so that
 		// undefined GPU memory does not produce garbage pixels
-		// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, cppcoreguidelines-pro-type-static-cast-downcast, "the context is owned by the renderer; the const qualifier comes from the shared_ref<const context> API")
-		auto& ctx = const_cast<ruis::render::vulkan::factory&>(
-			static_cast<const ruis::render::vulkan::factory&>(this->ctx_ref.get())
-		);
+		// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the factory is owned by the renderer; the base-class reference comes from the ruis API")
+		const auto& ctx = static_cast<const ruis::render::vulkan::factory&>(this->factory.get());
 		ctx.one_shot([&](VkCommandBuffer cmd) {
 			const auto range = VkImageSubresourceRange{
 				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -320,18 +315,10 @@ void texture_2d::ensure_uploaded()
 
 texture_2d::~texture_2d()
 {
-	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, cppcoreguidelines-pro-type-static-cast-downcast, "the context is owned by the renderer; the const qualifier comes from the shared_ref<const context> API")
-	auto& ctx =
-		const_cast<ruis::render::vulkan::factory&>(static_cast<const ruis::render::vulkan::factory&>(this->ctx_ref.get()
-		));
-	// remove from the context's texture list
-	auto& tex_list = ctx.all_textures;
-	for (auto it = tex_list.begin(); it != tex_list.end(); ++it) {
-		if (*it == this) {
-			tex_list.erase(it);
-			break;
-		}
-	}
+	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the factory is owned by the renderer; the base-class reference comes from the ruis API")
+	const auto& ctx = static_cast<const ruis::render::vulkan::factory&>(this->factory.get());
+	// remove from the factory's texture list
+	ctx.unregister_texture(this);
 	vkDestroySampler(ctx.device, this->sampler, nullptr);
 	vkDestroyImageView(ctx.device, this->image_view, nullptr);
 	vkDestroyImage(ctx.device, this->image, nullptr);
@@ -342,10 +329,8 @@ texture_2d::~texture_2d()
 
 void texture_2d::create_image(rasterimage::dimensioned::dimensions_type dims)
 {
-	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, cppcoreguidelines-pro-type-static-cast-downcast, "the context is owned by the renderer; the const qualifier comes from the shared_ref<const context> API")
-	auto& ctx =
-		const_cast<ruis::render::vulkan::factory&>(static_cast<const ruis::render::vulkan::factory&>(this->ctx_ref.get()
-		));
+	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the factory is owned by the renderer; the base-class reference comes from the ruis API")
+	const auto& ctx = static_cast<const ruis::render::vulkan::factory&>(this->factory.get());
 
 	VkImageCreateInfo image_info{};
 	image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -394,11 +379,8 @@ void texture_2d::create_image(rasterimage::dimensioned::dimensions_type dims)
 
 void texture_2d::create_sampler(ruis::render::factory::texture_2d_parameters params)
 {
-	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, cppcoreguidelines-pro-type-static-cast-downcast, "the context is owned by the renderer; the const qualifier comes from the shared_ref<const context> API")
-	auto& ctx =
-		const_cast<ruis::render::vulkan::factory&>(static_cast<const ruis::render::vulkan::factory&>(this->ctx_ref.get()
-		));
-	(void)ctx;
+	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the factory is owned by the renderer; the base-class reference comes from the ruis API")
+	const auto& ctx = static_cast<const ruis::render::vulkan::factory&>(this->factory.get());
 
 	const auto sampler_info = VkSamplerCreateInfo{
 		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -425,10 +407,8 @@ void texture_2d::create_sampler(ruis::render::factory::texture_2d_parameters par
 
 void texture_2d::upload_data(const uint8_t* data, size_t data_size)
 {
-	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, cppcoreguidelines-pro-type-static-cast-downcast, "the context is owned by the renderer; the const qualifier comes from the shared_ref<const context> API")
-	auto& ctx =
-		const_cast<ruis::render::vulkan::factory&>(static_cast<const ruis::render::vulkan::factory&>(this->ctx_ref.get()
-		));
+	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the factory is owned by the renderer; the base-class reference comes from the ruis API")
+	const auto& ctx = static_cast<const ruis::render::vulkan::factory&>(this->factory.get());
 
 	VkBuffer staging_buffer = VK_NULL_HANDLE;
 	VkDeviceMemory staging_memory = VK_NULL_HANDLE;

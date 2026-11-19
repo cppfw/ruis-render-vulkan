@@ -69,7 +69,7 @@ class texture_2d;
  * may be different from the context currently rendering) before the draw.
  */
 void vulkan_shader_render(
-	const utki::shared_ref<const ruis::render::factory>& rendering_context, //
+	const utki::shared_ref<const ruis::render::factory>& factory, // NOLINT (unused: render uses context::current())
 	shader_kind kind,
 	const void* vertex_spirv,
 	size_t vertex_spirv_len,

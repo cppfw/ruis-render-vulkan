@@ -29,11 +29,8 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 using namespace ruis::render::vulkan;
 
-shader_color_pos_tex_alpha::shader_color_pos_tex_alpha(
-	const utki::shared_ref<const ruis::render::factory>& rendering_context
-) :
-	ruis::render::coloring_texturing_shader(rendering_context),
-	ctx_ref(rendering_context)
+shader_color_pos_tex_alpha::shader_color_pos_tex_alpha(utki::shared_ref<const ruis::render::factory> factory) :
+	ruis::render::coloring_texturing_shader(std::move(factory))
 {}
 
 void shader_color_pos_tex_alpha::render(
@@ -48,7 +45,7 @@ void shader_color_pos_tex_alpha::render(
 	const auto& vk_tex = static_cast<const texture_2d&>(tex);
 
 	vulkan_shader_render(
-		this->ctx_ref, //
+		this->factory, //
 		shader_kind::color_pos_tex_alpha,
 		std::data(spirv_shader_color_pos_tex_alpha_vertex),
 		spirv_shader_color_pos_tex_alpha_vertex_size,

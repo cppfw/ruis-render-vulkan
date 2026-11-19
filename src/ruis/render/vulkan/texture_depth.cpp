@@ -26,11 +26,10 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 using namespace ruis::render::vulkan;
 
 texture_depth::texture_depth(
-	const utki::shared_ref<const ruis::render::factory>& rendering_context, //
+	utki::shared_ref<const ruis::render::factory> factory, //
 	r4::vector2<uint32_t> dims
 ) :
-	ruis::render::texture_depth(rendering_context, dims),
-	ctx_ref(rendering_context)
+	ruis::render::texture_depth(std::move(factory), dims)
 {
 	this->create_image();
 }
@@ -38,7 +37,7 @@ texture_depth::texture_depth(
 texture_depth::~texture_depth()
 {
 	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the renderer owns the object; the base-class reference comes from the ruis API")
-	auto& ctx = static_cast<const ruis::render::vulkan::factory&>(this->ctx_ref.get());
+	const auto& ctx = static_cast<const ruis::render::vulkan::factory&>(this->factory.get());
 	vkDestroyImageView(ctx.device, this->image_view, nullptr);
 	vkDestroyImage(ctx.device, this->image, nullptr);
 	if (this->memory != VK_NULL_HANDLE) {
@@ -49,7 +48,7 @@ texture_depth::~texture_depth()
 void texture_depth::create_image()
 {
 	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the renderer owns the object; the base-class reference comes from the ruis API")
-	auto& ctx = static_cast<const ruis::render::vulkan::factory&>(this->ctx_ref.get());
+	const auto& ctx = static_cast<const ruis::render::vulkan::factory&>(this->factory.get());
 
 	const auto image_info = VkImageCreateInfo{
 		.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,

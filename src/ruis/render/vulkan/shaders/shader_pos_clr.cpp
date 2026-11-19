@@ -27,15 +27,14 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 using namespace ruis::render::vulkan;
 
-shader_pos_clr::shader_pos_clr(const utki::shared_ref<const ruis::render::factory>& rendering_context) :
-	ruis::render::shader(rendering_context),
-	ctx_ref(rendering_context)
+shader_pos_clr::shader_pos_clr(utki::shared_ref<const ruis::render::factory> factory) :
+	ruis::render::shader(std::move(factory))
 {}
 
 void shader_pos_clr::render(const r4::matrix4<float>& m, const ruis::render::vertex_array& va) const
 {
 	vulkan_shader_render(
-		this->ctx_ref, //
+		this->factory, //
 		shader_kind::pos_clr,
 		std::data(spirv_shader_pos_clr_vertex),
 		spirv_shader_pos_clr_vertex_size,
