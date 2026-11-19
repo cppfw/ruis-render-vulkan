@@ -31,8 +31,7 @@ frame_buffer::frame_buffer(
 	std::shared_ptr<ruis::render::texture_depth> depth,
 	std::shared_ptr<ruis::render::texture_stencil> stencil
 ) :
-	ruis::render::frame_buffer(rendering_context, std::move(color), std::move(depth), std::move(stencil)),
-	ctx_ref(rendering_context)
+	ruis::render::frame_buffer(rendering_context, std::move(color), std::move(depth), std::move(stencil))
 {
 	// validate that the color and depth attachments are Vulkan textures
 	const auto& vcolor = this->vulkan_color();
@@ -40,7 +39,7 @@ frame_buffer::frame_buffer(
 
 	// create the VkFramebuffer
 	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the renderer owns the object; the base-class reference comes from the ruis API")
-	auto& ctx = static_cast<const context&>(this->ctx_ref.get());
+	auto& ctx = static_cast<const context&>(this->rendering_context.get());
 	const auto w = uint32_t(vcolor.dims().x());
 	const auto h = uint32_t(vcolor.dims().y());
 
@@ -77,7 +76,7 @@ frame_buffer::~frame_buffer()
 {
 	if (this->framebuffer != VK_NULL_HANDLE) {
 		// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the renderer owns the object; the base-class reference comes from the ruis API")
-		auto& ctx = static_cast<const context&>(this->ctx_ref.get());
+		auto& ctx = static_cast<const context&>(this->rendering_context.get());
 		vkDestroyFramebuffer(ctx.device, this->framebuffer, nullptr);
 	}
 }
@@ -92,8 +91,8 @@ rasterimage::image_variant frame_buffer::get_color_pixels()
 	// read the color attachment back to CPU RAM. the FBO render was recorded in the
 	// frame's command buffer (deferred), so the readback is appended to it, then the
 	// frame is submitted and waited on.
-	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, cppcoreguidelines-pro-type-static-cast-downcast, "the context is owned by the renderer; the const qualifier comes from the shared_ref<const context> API")
-	auto& ctx = const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
+	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the renderer owns the object; the base-class reference comes from the ruis API")
+	auto& ctx = static_cast<context&>(this->rendering_context.get());
 	return ctx.readback_framebuffer_color(*this);
 }
 

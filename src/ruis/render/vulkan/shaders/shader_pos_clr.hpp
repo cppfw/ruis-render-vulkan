@@ -31,12 +31,9 @@ namespace ruis::render::vulkan {
 class shader_pos_clr : public ruis::render::shader
 {
 public:
-	shader_pos_clr(const utki::shared_ref<const ruis::render::factory>& rendering_context);
+	shader_pos_clr(utki::shared_ref<const ruis::render::factory> factory);
 
 	void render(const r4::matrix4<float>& m, const ruis::render::vertex_array& va) const override;
-
-private:
-	const utki::shared_ref<const ruis::render::factory> ctx_ref;
 };
 
 } // namespace ruis::render::vulkan

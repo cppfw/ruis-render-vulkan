@@ -33,11 +33,18 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 namespace ruis::render::vulkan {
 
+// the vulkan derived classes intentionally share names with the ruis::render base classes
+// NOLINTNEXTLINE(bugprone-forward-declaration-namespace, "derived class shadows the ruis::render base class by design")
 class texture_2d;
+// NOLINTNEXTLINE(bugprone-forward-declaration-namespace, "derived class shadows the ruis::render base class by design")
 class texture_depth;
+// NOLINTNEXTLINE(bugprone-forward-declaration-namespace, "derived class shadows the ruis::render base class by design")
 class texture_cube;
+// NOLINTNEXTLINE(bugprone-forward-declaration-namespace, "derived class shadows the ruis::render base class by design")
 class vertex_array;
+// NOLINTNEXTLINE(bugprone-forward-declaration-namespace, "derived class shadows the ruis::render base class by design")
 class vertex_buffer;
+// NOLINTNEXTLINE(bugprone-forward-declaration-namespace, "derived class shadows the ruis::render base class by design")
 class index_buffer;
 
 /**
@@ -63,9 +70,6 @@ public:
 	VkPhysicalDevice physical_device = VK_NULL_HANDLE;
 	VkQueue queue = VK_NULL_HANDLE;
 	VkInstance instance = VK_NULL_HANDLE;
-
-	// ---- texture tracking for deferred upload (public: used by texture_2d) ----
-	std::vector<texture_2d*> all_textures;
 
 	factory(
 		const utki::shared_ref<ruis::render::native_window>& native_window, //
@@ -176,7 +180,19 @@ public:
 	// the texture objects (their upload state), not the factory's C++ state.
 	void ensure_textures_uploaded() const;
 
+	// register / unregister a texture with the factory's deferred-upload tracking.
+	// const: they only mutate the (mutable) tracking list, not the factory's C++ state.
+	void register_texture(texture_2d* t) const
+	{
+		this->all_textures.push_back(t);
+	}
+
+	void unregister_texture(texture_2d* t) const;
+
 private:
+	// ---- texture tracking for deferred upload (mutable: guarded by const register/unregister) ----
+	mutable std::vector<texture_2d*> all_textures;
+
 	// ---- one-shot command submission (texture uploads) ----
 	VkCommandPool one_shot_pool = VK_NULL_HANDLE;
 	VkCommandBuffer one_shot_command_buffer = VK_NULL_HANDLE;

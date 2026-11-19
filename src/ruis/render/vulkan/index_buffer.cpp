@@ -28,14 +28,13 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 using namespace ruis::render::vulkan;
 
 index_buffer::index_buffer(
-	const utki::shared_ref<const ruis::render::factory>& rendering_context, //
+	utki::shared_ref<const ruis::render::factory> factory, //
 	const void* data,
 	size_t size_bytes,
 	size_t size,
 	VkIndexType index_type
 ) :
-	ruis::render::index_buffer(rendering_context),
-	ctx_ref(rendering_context),
+	ruis::render::index_buffer(std::move(factory)),
 	index_type(index_type),
 	elements_count(uint32_t(size)),
 	byte_size(uint32_t(size_bytes))
@@ -44,11 +43,11 @@ index_buffer::index_buffer(
 }
 
 index_buffer::index_buffer(
-	const utki::shared_ref<const ruis::render::factory>& rendering_context, //
+	utki::shared_ref<const ruis::render::factory> factory, //
 	utki::span<const uint16_t> indices
 ) :
 	index_buffer(
-		rendering_context, //
+		std::move(factory), //
 		indices.data(),
 		indices.size_bytes(),
 		indices.size(),
@@ -57,11 +56,11 @@ index_buffer::index_buffer(
 {}
 
 index_buffer::index_buffer(
-	const utki::shared_ref<const ruis::render::factory>& rendering_context, //
+	utki::shared_ref<const ruis::render::factory> factory, //
 	utki::span<const uint32_t> indices
 ) :
 	index_buffer(
-		rendering_context, //
+		std::move(factory), //
 		indices.data(),
 		indices.size_bytes(),
 		indices.size(),
@@ -72,7 +71,7 @@ index_buffer::index_buffer(
 index_buffer::~index_buffer()
 {
 	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the renderer owns the object; the base-class reference comes from the ruis API")
-	auto& ctx = static_cast<const ruis::render::vulkan::factory&>(this->ctx_ref.get());
+	const auto& ctx = static_cast<const ruis::render::vulkan::factory&>(this->factory.get());
 	if (this->buffer != VK_NULL_HANDLE) {
 		vkDestroyBuffer(ctx.device, this->buffer, nullptr);
 		vkFreeMemory(ctx.device, this->memory, nullptr);
@@ -86,7 +85,7 @@ void index_buffer::create_vk_buffer(const void* data, size_t size_bytes)
 	}
 
 	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the renderer owns the object; the base-class reference comes from the ruis API")
-	auto& ctx = static_cast<const ruis::render::vulkan::factory&>(this->ctx_ref.get());
+	const auto& ctx = static_cast<const ruis::render::vulkan::factory&>(this->factory.get());
 
 	const auto buffer_info = VkBufferCreateInfo{
 		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,

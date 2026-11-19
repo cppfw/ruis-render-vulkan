@@ -55,7 +55,6 @@ public:
 	VkFramebuffer vulkan_framebuffer() const;
 
 private:
-	const utki::shared_ref<ruis::render::context> ctx_ref;
 	VkFramebuffer framebuffer = VK_NULL_HANDLE;
 };
 
