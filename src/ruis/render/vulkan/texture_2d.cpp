@@ -112,7 +112,7 @@ texture_2d::texture_2d(
 
 	// register with the context for deferred upload tracking
 	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, cppcoreguidelines-pro-type-static-cast-downcast, "the context is owned by the renderer; the const qualifier comes from the shared_ref<const context> API")
-	auto& vk_ctx = const_cast<factory&>(static_cast<const factory&>(rendering_context.get()));
+	auto& vk_ctx = const_cast<ruis::render::vulkan::factory&>(static_cast<const ruis::render::vulkan::factory&>(rendering_context.get()));
 	vk_ctx.all_textures.push_back(this);
 
 	if (data != nullptr && data_size != 0) {
@@ -246,7 +246,7 @@ void texture_2d::ensure_uploaded()
 		// no data to upload: clear the image to transparent so that
 		// undefined GPU memory does not produce garbage pixels
 		// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, cppcoreguidelines-pro-type-static-cast-downcast, "the context is owned by the renderer; the const qualifier comes from the shared_ref<const context> API")
-		auto& ctx = const_cast<factory&>(static_cast<const factory&>(this->ctx_ref.get()));
+		auto& ctx = const_cast<ruis::render::vulkan::factory&>(static_cast<const ruis::render::vulkan::factory&>(this->ctx_ref.get()));
 		ctx.one_shot([&](VkCommandBuffer cmd) {
 			const auto range = VkImageSubresourceRange{
 				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -317,7 +317,7 @@ void texture_2d::ensure_uploaded()
 texture_2d::~texture_2d()
 {
 	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, cppcoreguidelines-pro-type-static-cast-downcast, "the context is owned by the renderer; the const qualifier comes from the shared_ref<const context> API")
-	auto& ctx = const_cast<factory&>(static_cast<const factory&>(this->ctx_ref.get()));
+	auto& ctx = const_cast<ruis::render::vulkan::factory&>(static_cast<const ruis::render::vulkan::factory&>(this->ctx_ref.get()));
 	// remove from the context's texture list
 	auto& tex_list = ctx.all_textures;
 	for (auto it = tex_list.begin(); it != tex_list.end(); ++it) {
@@ -337,7 +337,7 @@ texture_2d::~texture_2d()
 void texture_2d::create_image(rasterimage::dimensioned::dimensions_type dims)
 {
 	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, cppcoreguidelines-pro-type-static-cast-downcast, "the context is owned by the renderer; the const qualifier comes from the shared_ref<const context> API")
-	auto& ctx = const_cast<factory&>(static_cast<const factory&>(this->ctx_ref.get()));
+	auto& ctx = const_cast<ruis::render::vulkan::factory&>(static_cast<const ruis::render::vulkan::factory&>(this->ctx_ref.get()));
 
 	VkImageCreateInfo image_info{};
 	image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -387,7 +387,7 @@ void texture_2d::create_image(rasterimage::dimensioned::dimensions_type dims)
 void texture_2d::create_sampler(ruis::render::factory::texture_2d_parameters params)
 {
 	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, cppcoreguidelines-pro-type-static-cast-downcast, "the context is owned by the renderer; the const qualifier comes from the shared_ref<const context> API")
-	auto& ctx = const_cast<factory&>(static_cast<const factory&>(this->ctx_ref.get()));
+	auto& ctx = const_cast<ruis::render::vulkan::factory&>(static_cast<const ruis::render::vulkan::factory&>(this->ctx_ref.get()));
 	(void)ctx;
 
 	const auto sampler_info = VkSamplerCreateInfo{
@@ -416,7 +416,7 @@ void texture_2d::create_sampler(ruis::render::factory::texture_2d_parameters par
 void texture_2d::upload_data(const uint8_t* data, size_t data_size)
 {
 	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, cppcoreguidelines-pro-type-static-cast-downcast, "the context is owned by the renderer; the const qualifier comes from the shared_ref<const context> API")
-	auto& ctx = const_cast<factory&>(static_cast<const factory&>(this->ctx_ref.get()));
+	auto& ctx = const_cast<ruis::render::vulkan::factory&>(static_cast<const ruis::render::vulkan::factory&>(this->ctx_ref.get()));
 
 	VkBuffer staging_buffer = VK_NULL_HANDLE;
 	VkDeviceMemory staging_memory = VK_NULL_HANDLE;
