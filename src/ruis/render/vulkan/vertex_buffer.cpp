@@ -28,10 +28,10 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 using namespace ruis::render::vulkan;
 
 vertex_buffer::vertex_buffer(
-	const utki::shared_ref<const ruis::render::context>& rendering_context, //
+	const utki::shared_ref<const ruis::render::factory>& rendering_context, //
 	std::vector<float>&& padded_data
 ) :
-	ruis::render::vertex_buffer(rendering_context, padded_data.size() / context::vertex_component_count),
+	ruis::render::vertex_buffer(rendering_context, padded_data.size() / factory::vertex_component_count),
 	ctx_ref(rendering_context)
 {
 	this->create_vk_buffer(std::move(padded_data));
@@ -40,7 +40,7 @@ vertex_buffer::vertex_buffer(
 vertex_buffer::~vertex_buffer()
 {
 	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the renderer owns the object; the base-class reference comes from the ruis API")
-	auto& ctx = static_cast<const context&>(this->ctx_ref.get());
+	auto& ctx = static_cast<const factory&>(this->ctx_ref.get());
 	if (this->buffer != VK_NULL_HANDLE) {
 		vkDestroyBuffer(ctx.device, this->buffer, nullptr);
 		vkFreeMemory(ctx.device, this->memory, nullptr);
@@ -57,7 +57,7 @@ void vertex_buffer::create_vk_buffer(
 	}
 
 	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the renderer owns the object; the base-class reference comes from the ruis API")
-	auto& ctx = static_cast<const context&>(this->ctx_ref.get());
+	auto& ctx = static_cast<const factory&>(this->ctx_ref.get());
 
 	this->byte_size = uint32_t(data.size() * sizeof(float));
 
