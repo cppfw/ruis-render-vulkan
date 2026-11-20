@@ -78,30 +78,36 @@ vulkan_device::~vulkan_device()
 	}
 }
 
-std::unique_ptr<vulkan_device> vulkan_device::make(
-	std::vector<std::string> instance_extensions,
-	std::vector<std::string> device_extensions
-)
+vulkan_device::vulkan_device(std::vector<std::string> instance_extensions, std::vector<std::string> device_extensions) :
+	instance(VK_NULL_HANDLE),
+	physical_device(VK_NULL_HANDLE),
+	device(VK_NULL_HANDLE),
+	queue(VK_NULL_HANDLE),
+	graphics_queue_family(0),
+	owns_instance(false)
 {
 	if (device_extensions.empty()) {
 		device_extensions.emplace_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
 	}
 
-	auto ret = std::unique_ptr<vulkan_device>(new vulkan_device());
-
-	create_instance_and_physical_device(instance_extensions, ret->instance, ret->physical_device, ret->owns_instance);
+	create_instance_and_physical_device(
+		instance_extensions,
+		this->instance,
+		this->physical_device,
+		this->owns_instance
+	);
 
 	// find the graphics queue family
 	std::vector<VkQueueFamilyProperties> families;
 	uint32_t family_count = 0;
-	vkGetPhysicalDeviceQueueFamilyProperties(ret->physical_device, &family_count, nullptr);
+	vkGetPhysicalDeviceQueueFamilyProperties(this->physical_device, &family_count, nullptr);
 	families.resize(family_count);
-	vkGetPhysicalDeviceQueueFamilyProperties(ret->physical_device, &family_count, families.data());
+	vkGetPhysicalDeviceQueueFamilyProperties(this->physical_device, &family_count, families.data());
 
 	uint32_t graphics_family = 0;
 	for (uint32_t i = 0; i < family_count; ++i) {
 		if (families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-			ret->graphics_queue_family = i;
+			this->graphics_queue_family = i;
 			break;
 		}
 	}
@@ -129,12 +135,10 @@ std::unique_ptr<vulkan_device> vulkan_device::make(
 		device_info.ppEnabledExtensionNames = c_device_extensions.data();
 	}
 
-	VU_CHECK(vkCreateDevice(ret->physical_device, &device_info, nullptr, &ret->device));
+	VU_CHECK(vkCreateDevice(this->physical_device, &device_info, nullptr, &this->device));
 
-	vkGetDeviceQueue(ret->device, graphics_family, 0, &ret->queue);
-	ret->graphics_queue_family = graphics_family;
-
-	return ret;
+	vkGetDeviceQueue(this->device, graphics_family, 0, &this->queue);
+	this->graphics_queue_family = graphics_family;
 }
 
 } // namespace ruis::render::vulkan

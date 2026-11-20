@@ -32,7 +32,7 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 #include "shaders/shader_common.hpp"
 
 #include "factory.hpp"
-#include "surface_provider.hpp"
+#include "surface.hpp"
 #include "vulkan.hpp"
 
 namespace ruis::render::vulkan {
@@ -89,7 +89,7 @@ class context : public ruis::render::context
 public:
 	context(
 		const utki::shared_ref<ruis::render::native_window>& native_window, //
-		const utki::shared_ref<const surface_provider>& surface_provider, //
+		const utki::shared_ref<const surface>& surface, //
 		const utki::shared_ref<const ruis::render::vulkan::factory>& factory
 	);
 	~context() override;
@@ -202,11 +202,11 @@ public:
 private:
 	// keep the surface provider alive for the lifetime of the context
 	// (the surface must outlive the swapchain)
-	utki::shared_ref<const surface_provider> surface_provider_ref;
+	utki::shared_ref<const surface> surface_ref;
 
 	VkInstance instance = VK_NULL_HANDLE;
 	VkQueue queue = VK_NULL_HANDLE;
-	VkSurfaceKHR surface = VK_NULL_HANDLE;
+	VkSurfaceKHR vk_surface = VK_NULL_HANDLE;
 	VkPhysicalDeviceProperties device_properties{};
 	uint32_t graphics_queue_family = 0;
 

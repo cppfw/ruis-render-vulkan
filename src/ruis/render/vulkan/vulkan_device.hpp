@@ -42,7 +42,7 @@ namespace ruis::render::vulkan {
  * The platform layer provides the instance extensions (e.g. VK_KHR_xlib_surface
  * or VK_KHR_wayland_surface) and the device extensions (e.g. VK_KHR_swapchain).
  *
- * The vulkan_device must outlive all surface_providers that reference it.
+ * The vulkan_device must outlive all surfaces that reference it.
  */
 class vulkan_device
 {
@@ -55,10 +55,7 @@ public:
 	vulkan_device& operator=(vulkan_device&&) = delete;
 
 	// create the Vulkan device
-	static std::unique_ptr<vulkan_device> make(
-		std::vector<std::string> instance_extensions,
-		std::vector<std::string> device_extensions
-	);
+	vulkan_device(std::vector<std::string> instance_extensions, std::vector<std::string> device_extensions);
 
 	VkInstance get_instance() const
 	{
@@ -86,8 +83,6 @@ public:
 	}
 
 private:
-	vulkan_device() = default;
-
 	VkInstance instance = VK_NULL_HANDLE;
 	VkPhysicalDevice physical_device = VK_NULL_HANDLE;
 	VkDevice device = VK_NULL_HANDLE;

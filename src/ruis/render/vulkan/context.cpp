@@ -105,7 +105,7 @@ VkPresentModeKHR pick_present_mode(VkPhysicalDevice phys, VkSurfaceKHR surface, 
 
 context::context(
 	const utki::shared_ref<ruis::render::native_window>& native_window, //
-	const utki::shared_ref<const surface_provider>& surface_provider, //
+	const utki::shared_ref<const surface>& surface, //
 	const utki::shared_ref<const ruis::render::vulkan::factory>& factory
 ) :
 	ruis::render::context(
@@ -128,12 +128,12 @@ context::context(
 		}()
 	),
 	factory(factory), //
-	physical_device(surface_provider.get().get_physical_device()), //
-	device(surface_provider.get().get_device()), //
-	surface_provider_ref(surface_provider), //
-	instance(surface_provider.get().get_instance()), //
-	queue(surface_provider.get().get_queue()), //
-	surface(surface_provider.get().get_surface())
+	physical_device(surface.get().get_physical_device()), //
+	device(surface.get().get_device()), //
+	surface_ref(surface), //
+	instance(surface.get().get_instance()), //
+	queue(surface.get().get_queue()), //
+	vk_surface(surface.get().get_surface())
 {
 	(void)native_window;
 
@@ -193,7 +193,7 @@ context::context(
 
 	// ---- swapchain (only if we have a surface; headless contexts skip this) ----
 	// must come before create_render_passes() which uses swapchain_format
-	if (this->surface_provider_ref.get().has_surface()) {
+	if (this->surface_ref.get().has_surface()) {
 		this->create_swapchain();
 	}
 
@@ -201,22 +201,22 @@ context::context(
 	this->create_render_passes();
 
 	// ---- swapchain framebuffers ----
-	if (this->surface_provider_ref.get().has_surface()) {
+	if (this->surface_ref.get().has_surface()) {
 		this->create_swapchain_framebuffers();
 	}
 }
 
 void context::create_swapchain()
 {
-	utki::assert(this->surface != VK_NULL_HANDLE, SL);
+	utki::assert(this->vk_surface != VK_NULL_HANDLE, SL);
 	const auto dims = this->native_window.get().get_dims();
 	this->window_dims = r4::vector2<uint32_t>(std::max<uint32_t>(1, dims.x()), std::max<uint32_t>(1, dims.y()));
 
-	const auto surface_format = pick_surface_format(this->physical_device, this->surface);
+	const auto surface_format = pick_surface_format(this->physical_device, this->vk_surface);
 	this->swapchain_format = surface_format.format;
 
 	VkSurfaceCapabilitiesKHR caps{};
-	VU_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(this->physical_device, this->surface, &caps));
+	VU_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(this->physical_device, this->vk_surface, &caps));
 
 	// clamp the dimensions to the supported range
 	uint32_t width = this->window_dims.x();
@@ -241,13 +241,13 @@ void context::create_swapchain()
 
 	const auto vsync_enabled = this->is_vsync_enabled();
 	this->swapchain_vsync = vsync_enabled;
-	const auto present_mode = pick_present_mode(this->physical_device, this->surface, vsync_enabled);
+	const auto present_mode = pick_present_mode(this->physical_device, this->vk_surface, vsync_enabled);
 
 	const uint32_t queue_family = 0;
 
 	const auto info = VkSwapchainCreateInfoKHR{
 		.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-		.surface = this->surface,
+		.surface = this->vk_surface,
 		.minImageCount = image_count,
 		.imageFormat = this->swapchain_format,
 		.imageColorSpace = surface_format.colorSpace,
@@ -301,7 +301,7 @@ void context::create_swapchain()
 void context::ensure_swapchain_valid()
 {
 	// headless contexts (e.g. resource loading) have no surface; nothing to do
-	if (!this->surface_provider_ref.get().has_surface()) {
+	if (!this->surface_ref.get().has_surface()) {
 		return;
 	}
 	// use get_dims() which accounts for the HiDPI scale factor
