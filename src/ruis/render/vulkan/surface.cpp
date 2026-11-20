@@ -21,41 +21,41 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 #include "surface.hpp"
 
-#include "vulkan_device.hpp"
+#include "device.hpp"
 
 namespace ruis::render::vulkan {
 
-surface::surface(const vulkan_device& device, VkSurfaceKHR surface) :
-	device(&device),
+surface::surface(const device& device, VkSurfaceKHR surface) :
+	vu_device(&device),
 	vk_surface(surface)
 {}
 
 surface::~surface()
 {
 	if (this->vk_surface != VK_NULL_HANDLE) {
-		vkDestroySurfaceKHR(this->device->get_instance(), this->vk_surface, nullptr);
+		vkDestroySurfaceKHR(this->vu_device->get_instance(), this->vk_surface, nullptr);
 		this->vk_surface = VK_NULL_HANDLE;
 	}
 }
 
 VkInstance surface::get_instance() const
 {
-	return this->device->get_instance();
+	return this->vu_device->get_instance();
 }
 
 VkPhysicalDevice surface::get_physical_device() const
 {
-	return this->device->get_physical_device();
+	return this->vu_device->get_physical_device();
 }
 
 VkDevice surface::get_device() const
 {
-	return this->device->get_device();
+	return this->vu_device->get_device();
 }
 
 VkQueue surface::get_queue() const
 {
-	return this->device->get_queue();
+	return this->vu_device->get_queue();
 }
 
 } // namespace ruis::render::vulkan

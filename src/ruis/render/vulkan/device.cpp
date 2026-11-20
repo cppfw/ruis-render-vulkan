@@ -19,7 +19,7 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 /* ================ LICENSE END ================ */
 
-#include "vulkan_device.hpp"
+#include "device.hpp"
 
 namespace ruis::render::vulkan {
 
@@ -66,11 +66,11 @@ void create_instance_and_physical_device(
 }
 } // namespace
 
-vulkan_device::~vulkan_device()
+device::~device()
 {
-	if (this->device != VK_NULL_HANDLE) {
-		vkDestroyDevice(this->device, nullptr);
-		this->device = VK_NULL_HANDLE;
+	if (this->vk_device != VK_NULL_HANDLE) {
+		vkDestroyDevice(this->vk_device, nullptr);
+		this->vk_device = VK_NULL_HANDLE;
 	}
 	if (this->owns_instance && this->instance != VK_NULL_HANDLE) {
 		vkDestroyInstance(this->instance, nullptr);
@@ -78,10 +78,10 @@ vulkan_device::~vulkan_device()
 	}
 }
 
-vulkan_device::vulkan_device(std::vector<std::string> instance_extensions, std::vector<std::string> device_extensions) :
+device::device(std::vector<std::string> instance_extensions, std::vector<std::string> device_extensions) :
 	instance(VK_NULL_HANDLE),
 	physical_device(VK_NULL_HANDLE),
-	device(VK_NULL_HANDLE),
+	vk_device(VK_NULL_HANDLE),
 	queue(VK_NULL_HANDLE),
 	graphics_queue_family(0),
 	owns_instance(false)
@@ -135,9 +135,9 @@ vulkan_device::vulkan_device(std::vector<std::string> instance_extensions, std::
 		device_info.ppEnabledExtensionNames = c_device_extensions.data();
 	}
 
-	VU_CHECK(vkCreateDevice(this->physical_device, &device_info, nullptr, &this->device));
+	VU_CHECK(vkCreateDevice(this->physical_device, &device_info, nullptr, &this->vk_device));
 
-	vkGetDeviceQueue(this->device, graphics_family, 0, &this->queue);
+	vkGetDeviceQueue(this->vk_device, graphics_family, 0, &this->queue);
 	this->graphics_queue_family = graphics_family;
 }
 
