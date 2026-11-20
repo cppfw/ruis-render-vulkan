@@ -56,7 +56,7 @@ frame_buffer::frame_buffer(
 			.height = h,
 			.layers = 1
 		};
-		VU_CHECK(vkCreateFramebuffer(ctx.device, &fb_info, nullptr, &this->framebuffer));
+		check_vk_result(vkCreateFramebuffer(ctx.device, &fb_info, nullptr, &this->framebuffer), "vkCreateFramebuffer");
 	} else {
 		const auto attachments = std::array<VkImageView, 1>{{vcolor.image_view}};
 		const auto fb_info = VkFramebufferCreateInfo{
@@ -68,7 +68,7 @@ frame_buffer::frame_buffer(
 			.height = h,
 			.layers = 1
 		};
-		VU_CHECK(vkCreateFramebuffer(ctx.device, &fb_info, nullptr, &this->framebuffer));
+		check_vk_result(vkCreateFramebuffer(ctx.device, &fb_info, nullptr, &this->framebuffer), "vkCreateFramebuffer");
 	}
 }
 

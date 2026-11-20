@@ -62,7 +62,7 @@ void texture_depth::create_image()
 		.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
 		.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
 	};
-	VU_CHECK(vkCreateImage(ctx.device, &image_info, nullptr, &this->image));
+	check_vk_result(vkCreateImage(ctx.device, &image_info, nullptr, &this->image), "vkCreateImage");
 
 	VkMemoryRequirements mem_reqs{};
 	vkGetImageMemoryRequirements(ctx.device, this->image, &mem_reqs);
@@ -71,8 +71,8 @@ void texture_depth::create_image()
 		.allocationSize = mem_reqs.size,
 		.memoryTypeIndex = pick_device_local_memory_type(ctx.physical_device, mem_reqs)
 	};
-	VU_CHECK(vkAllocateMemory(ctx.device, &alloc_info, nullptr, &this->memory));
-	VU_CHECK(vkBindImageMemory(ctx.device, this->image, this->memory, 0));
+	check_vk_result(vkAllocateMemory(ctx.device, &alloc_info, nullptr, &this->memory), "vkAllocateMemory");
+	check_vk_result(vkBindImageMemory(ctx.device, this->image, this->memory, 0), "vkBindImageMemory");
 
 	const auto view_info = VkImageViewCreateInfo{
 		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -86,5 +86,5 @@ void texture_depth::create_image()
 							   .baseArrayLayer = 0,
 							   .layerCount = 1}
 	};
-	VU_CHECK(vkCreateImageView(ctx.device, &view_info, nullptr, &this->image_view));
+	check_vk_result(vkCreateImageView(ctx.device, &view_info, nullptr, &this->image_view), "vkCreateImageView");
 }

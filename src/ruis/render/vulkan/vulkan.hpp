@@ -48,9 +48,6 @@ inline void check_vk_result(VkResult res, const char* where)
 	}
 }
 
-// checks the result of a Vulkan call
-#define VU_CHECK(x) ::ruis::render::vulkan::check_vk_result((x), #x)
-
 // converts a ruis render blend factor to a VkBlendFactor
 inline VkBlendFactor to_vk_blend_factor(ruis::render::context::blend_factor f)
 {
