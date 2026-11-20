@@ -147,7 +147,10 @@ context::context(
 			.queueFamilyIndex = 0
 		};
 		{
-			check_vk_result(vkCreateCommandPool(this->device, &pool_info, nullptr, &this->command_pool), "vkCreateCommandPool");
+			check_vk_result(
+				vkCreateCommandPool(this->device, &pool_info, nullptr, &this->command_pool),
+				"vkCreateCommandPool"
+			);
 		}
 
 		const auto alloc_info = VkCommandBufferAllocateInfo{
@@ -156,7 +159,10 @@ context::context(
 			.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
 			.commandBufferCount = 1
 		};
-		check_vk_result(vkAllocateCommandBuffers(this->device, &alloc_info, &this->command_buffer), "vkAllocateCommandBuffers");
+		check_vk_result(
+			vkAllocateCommandBuffers(this->device, &alloc_info, &this->command_buffer),
+			"vkAllocateCommandBuffers"
+		);
 	}
 	{
 		const auto fence_info = VkFenceCreateInfo{.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
@@ -165,10 +171,16 @@ context::context(
 	{
 		const auto sem_info = VkSemaphoreCreateInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
 		{
-			check_vk_result(vkCreateSemaphore(this->device, &sem_info, nullptr, &this->image_available_sem), "vkCreateSemaphore");
+			check_vk_result(
+				vkCreateSemaphore(this->device, &sem_info, nullptr, &this->image_available_sem),
+				"vkCreateSemaphore"
+			);
 		}
 		{
-			check_vk_result(vkCreateSemaphore(this->device, &sem_info, nullptr, &this->render_finished_sem), "vkCreateSemaphore");
+			check_vk_result(
+				vkCreateSemaphore(this->device, &sem_info, nullptr, &this->render_finished_sem),
+				"vkCreateSemaphore"
+			);
 		}
 	}
 	{
@@ -184,7 +196,10 @@ context::context(
 			.pPoolSizes = pool_sizes.data()
 		};
 		{
-			check_vk_result(vkCreateDescriptorPool(this->device, &pool_info, nullptr, &this->descriptor_pool), "vkCreateDescriptorPool");
+			check_vk_result(
+				vkCreateDescriptorPool(this->device, &pool_info, nullptr, &this->descriptor_pool),
+				"vkCreateDescriptorPool"
+			);
 		}
 	}
 
@@ -216,7 +231,10 @@ void context::create_swapchain()
 	this->swapchain_format = surface_format.format;
 
 	VkSurfaceCapabilitiesKHR caps{};
-	check_vk_result(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(this->physical_device, this->vk_surface, &caps), "vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
+	check_vk_result(
+		vkGetPhysicalDeviceSurfaceCapabilitiesKHR(this->physical_device, this->vk_surface, &caps),
+		"vkGetPhysicalDeviceSurfaceCapabilitiesKHR"
+	);
 
 	// clamp the dimensions to the supported range
 	uint32_t width = this->window_dims.x();
@@ -284,7 +302,10 @@ void context::create_swapchain()
 	uint32_t count = 0;
 	check_vk_result(vkGetSwapchainImagesKHR(this->device, this->swapchain, &count, nullptr), "vkGetSwapchainImagesKHR");
 	this->swapchain_images.resize(count);
-	check_vk_result(vkGetSwapchainImagesKHR(this->device, this->swapchain, &count, this->swapchain_images.data()), "vkGetSwapchainImagesKHR");
+	check_vk_result(
+		vkGetSwapchainImagesKHR(this->device, this->swapchain, &count, this->swapchain_images.data()),
+		"vkGetSwapchainImagesKHR"
+	);
 	this->swapchain_image_count = count;
 
 	this->window_dims = r4::vector2<uint32_t>(width, height);
@@ -367,8 +388,14 @@ void context::create_depth_image()
 		.allocationSize = mem_reqs.size,
 		.memoryTypeIndex = pick_device_local_memory_type(this->physical_device, mem_reqs)
 	};
-	check_vk_result(vkAllocateMemory(this->device, &alloc_info, nullptr, &this->depth_image_memory), "vkAllocateMemory");
-	check_vk_result(vkBindImageMemory(this->device, this->depth_image, this->depth_image_memory, 0), "vkBindImageMemory");
+	check_vk_result(
+		vkAllocateMemory(this->device, &alloc_info, nullptr, &this->depth_image_memory),
+		"vkAllocateMemory"
+	);
+	check_vk_result(
+		vkBindImageMemory(this->device, this->depth_image, this->depth_image_memory, 0),
+		"vkBindImageMemory"
+	);
 
 	{
 		const auto view_info = VkImageViewCreateInfo{
@@ -383,7 +410,10 @@ void context::create_depth_image()
 								   .baseArrayLayer = 0,
 								   .layerCount = 1}
 		};
-		check_vk_result(vkCreateImageView(this->device, &view_info, nullptr, &this->depth_image_view), "vkCreateImageView");
+		check_vk_result(
+			vkCreateImageView(this->device, &view_info, nullptr, &this->depth_image_view),
+			"vkCreateImageView"
+		);
 	}
 }
 
@@ -1410,8 +1440,9 @@ VkPipeline context::build_pipeline(
 
 	VkPipeline pipeline = VK_NULL_HANDLE;
 	check_vk_result(
-		vkCreateGraphicsPipelines(this->device, this->factory.get().get_pipeline_cache(), 1, &info, nullptr, &pipeline)
-	, "vkCreateGraphicsPipelines");
+		vkCreateGraphicsPipelines(this->device, this->factory.get().get_pipeline_cache(), 1, &info, nullptr, &pipeline),
+		"vkCreateGraphicsPipelines"
+	);
 
 	// destroy the shader modules (they are now baked into the pipeline)
 	vkDestroyShaderModule(this->device, vertex_stage.module, nullptr);
@@ -1613,7 +1644,10 @@ void context::submit_frame(bool present)
 	// wait for the frame to complete using vkQueueWaitIdle (safest for AMD driver)
 	{
 		check_vk_result(vkQueueWaitIdle(this->queue), "vkQueueWaitIdle");
-		check_vk_result(vkWaitForFences(this->device, 1, &this->frame_fence, VK_TRUE, 1000000000ull), "vkWaitForFences"); // 1s timeout
+		check_vk_result(
+			vkWaitForFences(this->device, 1, &this->frame_fence, VK_TRUE, 1000000000ull),
+			"vkWaitForFences"
+		); // 1s timeout
 		vkResetFences(this->device, 1, &this->frame_fence);
 		this->frame_submitted = false;
 	}
