@@ -28,7 +28,7 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 #include <ruis/render/factory.hpp>
 #include <vulkan/vulkan.h>
 
-#include "surface_provider.hpp"
+#include "surface.hpp"
 #include "vulkan.hpp"
 
 namespace ruis::render::vulkan {
@@ -56,7 +56,7 @@ class index_buffer;
  * objects (textures, vertex/index buffers, vertex arrays, shaders).
  *
  * A single factory is shared across all windows of an application: it wraps the
- * shared @ref vulkan_device (via the surface_provider) so that GPU objects created
+ * shared @ref vulkan_device (via the surface) so that GPU objects created
  * for one window (e.g. the common white texture and quad vertex buffers) can be
  * used by any other window.
  */
@@ -71,7 +71,7 @@ public:
 	VkQueue queue = VK_NULL_HANDLE;
 	VkInstance instance = VK_NULL_HANDLE;
 
-	factory(const utki::shared_ref<const surface_provider>& surface_provider);
+	factory(const utki::shared_ref<const surface>& surface);
 	~factory() override;
 
 	// noncopyable: owns the shared GPU resources

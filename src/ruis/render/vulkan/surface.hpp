@@ -41,16 +41,16 @@ class vulkan_device;
  * provider holds a reference to the shared vulkan_device and the window's
  * surface. It owns the surface (destroying it in the destructor).
  */
-class surface_provider
+class surface
 {
 public:
-	surface_provider(const vulkan_device& device, VkSurfaceKHR surface);
-	~surface_provider();
+	surface(const vulkan_device& device, VkSurfaceKHR surface);
+	~surface();
 
-	surface_provider(const surface_provider&) = delete;
-	surface_provider& operator=(const surface_provider&) = delete;
-	surface_provider(surface_provider&&) = delete;
-	surface_provider& operator=(surface_provider&&) = delete;
+	surface(const surface&) = delete;
+	surface& operator=(const surface&) = delete;
+	surface(surface&&) = delete;
+	surface& operator=(surface&&) = delete;
 
 	/**
 	 * @brief The shared Vulkan instance.
@@ -78,7 +78,7 @@ public:
 	 */
 	VkSurfaceKHR get_surface() const
 	{
-		return this->surface;
+		return this->vk_surface;
 	}
 
 	/**
@@ -86,12 +86,12 @@ public:
 	 */
 	bool has_surface() const
 	{
-		return this->surface != VK_NULL_HANDLE;
+		return this->vk_surface != VK_NULL_HANDLE;
 	}
 
 private:
 	const vulkan_device* device;
-	VkSurfaceKHR surface;
+	VkSurfaceKHR vk_surface;
 };
 
 } // namespace ruis::render::vulkan

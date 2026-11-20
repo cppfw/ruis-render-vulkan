@@ -38,11 +38,11 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 using namespace ruis::render::vulkan;
 
-factory::factory(const utki::shared_ref<const surface_provider>& surface_provider) : //
-	device(surface_provider.get().get_device()), //
-	physical_device(surface_provider.get().get_physical_device()), //
-	queue(surface_provider.get().get_queue()), //
-	instance(surface_provider.get().get_instance())
+factory::factory(const utki::shared_ref<const surface>& surface) : //
+	device(surface.get().get_device()), //
+	physical_device(surface.get().get_physical_device()), //
+	queue(surface.get().get_queue()), //
+	instance(surface.get().get_instance())
 {
 	// ---- one-shot command submission resources (shared: used for texture uploads) ----
 	{
