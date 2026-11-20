@@ -52,13 +52,13 @@ void create_instance_and_physical_device(
 		info.ppEnabledExtensionNames = c_extensions.data();
 	}
 
-	VU_CHECK(vkCreateInstance(&info, nullptr, &instance));
+	check_vk_result(vkCreateInstance(&info, nullptr, &instance), "vkCreateInstance");
 	owns_instance = true;
 
 	uint32_t count = 0;
-	VU_CHECK(vkEnumeratePhysicalDevices(instance, &count, nullptr));
+	check_vk_result(vkEnumeratePhysicalDevices(instance, &count, nullptr), "vkEnumeratePhysicalDevices");
 	std::vector<VkPhysicalDevice> devices(count);
-	VU_CHECK(vkEnumeratePhysicalDevices(instance, &count, devices.data()));
+	check_vk_result(vkEnumeratePhysicalDevices(instance, &count, devices.data()), "vkEnumeratePhysicalDevices");
 	if (count == 0) {
 		throw std::runtime_error("no Vulkan physical devices found");
 	}
@@ -135,7 +135,7 @@ device::device(std::vector<std::string> instance_extensions, std::vector<std::st
 		device_info.ppEnabledExtensionNames = c_device_extensions.data();
 	}
 
-	VU_CHECK(vkCreateDevice(this->physical_device, &device_info, nullptr, &this->vk_device));
+	check_vk_result(vkCreateDevice(this->physical_device, &device_info, nullptr, &this->vk_device), "vkCreateDevice");
 
 	vkGetDeviceQueue(this->vk_device, graphics_family, 0, &this->queue);
 	this->graphics_queue_family = graphics_family;

@@ -52,7 +52,7 @@ factory::factory(const utki::shared_ref<const surface>& surface) : //
 			.queueFamilyIndex = 0
 		};
 		{
-			VU_CHECK(vkCreateCommandPool(this->device, &pool_info, nullptr, &this->one_shot_pool));
+			check_vk_result(vkCreateCommandPool(this->device, &pool_info, nullptr, &this->one_shot_pool), "vkCreateCommandPool");
 		}
 
 		const auto alloc_info = VkCommandBufferAllocateInfo{
@@ -61,11 +61,11 @@ factory::factory(const utki::shared_ref<const surface>& surface) : //
 			.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
 			.commandBufferCount = 1
 		};
-		VU_CHECK(vkAllocateCommandBuffers(this->device, &alloc_info, &this->one_shot_command_buffer));
+		check_vk_result(vkAllocateCommandBuffers(this->device, &alloc_info, &this->one_shot_command_buffer), "vkAllocateCommandBuffers");
 	}
 	{
 		const auto fence_info = VkFenceCreateInfo{.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
-		VU_CHECK(vkCreateFence(this->device, &fence_info, nullptr, &this->one_shot_fence));
+		check_vk_result(vkCreateFence(this->device, &fence_info, nullptr, &this->one_shot_fence), "vkCreateFence");
 	}
 
 	// ---- descriptor set layouts + pipeline layouts (shared) ----
@@ -84,7 +84,7 @@ factory::factory(const utki::shared_ref<const surface>& surface) : //
 				.bindingCount = 1,
 				.pBindings = &ubo_binding
 			};
-			VU_CHECK(vkCreateDescriptorSetLayout(this->device, &dsl_info, nullptr, &this->dsl_no_tex));
+			check_vk_result(vkCreateDescriptorSetLayout(this->device, &dsl_info, nullptr, &this->dsl_no_tex), "vkCreateDescriptorSetLayout");
 		}
 
 		const auto with_tex_bindings = std::array<VkDescriptorSetLayoutBinding, 2>{
@@ -100,7 +100,7 @@ factory::factory(const utki::shared_ref<const surface>& surface) : //
 				.bindingCount = 2,
 				.pBindings = with_tex_bindings.data()
 			};
-			VU_CHECK(vkCreateDescriptorSetLayout(this->device, &dsl_info, nullptr, &this->dsl_with_tex));
+			check_vk_result(vkCreateDescriptorSetLayout(this->device, &dsl_info, nullptr, &this->dsl_with_tex), "vkCreateDescriptorSetLayout");
 		}
 	}
 	{
@@ -110,7 +110,7 @@ factory::factory(const utki::shared_ref<const surface>& surface) : //
 				.setLayoutCount = 1,
 				.pSetLayouts = &this->dsl_no_tex
 			};
-			VU_CHECK(vkCreatePipelineLayout(this->device, &pl_info, nullptr, &this->pipeline_layout_no_tex));
+			check_vk_result(vkCreatePipelineLayout(this->device, &pl_info, nullptr, &this->pipeline_layout_no_tex), "vkCreatePipelineLayout");
 		}
 		{
 			const auto pl_info = VkPipelineLayoutCreateInfo{
@@ -118,12 +118,12 @@ factory::factory(const utki::shared_ref<const surface>& surface) : //
 				.setLayoutCount = 1,
 				.pSetLayouts = &this->dsl_with_tex
 			};
-			VU_CHECK(vkCreatePipelineLayout(this->device, &pl_info, nullptr, &this->pipeline_layout_with_tex));
+			check_vk_result(vkCreatePipelineLayout(this->device, &pl_info, nullptr, &this->pipeline_layout_with_tex), "vkCreatePipelineLayout");
 		}
 	}
 	{
 		const auto pc_info = VkPipelineCacheCreateInfo{.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
-		VU_CHECK(vkCreatePipelineCache(this->device, &pc_info, nullptr, &this->pipeline_cache));
+		check_vk_result(vkCreatePipelineCache(this->device, &pc_info, nullptr, &this->pipeline_cache), "vkCreatePipelineCache");
 	}
 }
 
@@ -336,16 +336,16 @@ void factory::one_shot(std::function<void(VkCommandBuffer)> cmd) const
 	// that was never submitted (e.g. the first call).
 	vkQueueWaitIdle(this->queue);
 
-	VU_CHECK(vkResetCommandBuffer(this->one_shot_command_buffer, 0));
+	check_vk_result(vkResetCommandBuffer(this->one_shot_command_buffer, 0), "vkResetCommandBuffer");
 	const auto begin_info = VkCommandBufferBeginInfo{
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
 		.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
 	};
-	VU_CHECK(vkBeginCommandBuffer(this->one_shot_command_buffer, &begin_info));
+	check_vk_result(vkBeginCommandBuffer(this->one_shot_command_buffer, &begin_info), "vkBeginCommandBuffer");
 
 	cmd(this->one_shot_command_buffer);
 
-	VU_CHECK(vkEndCommandBuffer(this->one_shot_command_buffer));
+	check_vk_result(vkEndCommandBuffer(this->one_shot_command_buffer), "vkEndCommandBuffer");
 
 	const auto submit_info = VkSubmitInfo{
 		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
@@ -359,7 +359,7 @@ void factory::one_shot(std::function<void(VkCommandBuffer)> cmd) const
 	// VK_NULL_HANDLE instead of nullptr: on 32-bit targets the Vulkan headers
 	// define non-dispatchable handles (VkFence, VkSemaphore, ...) as 64-bit
 	// integers, not pointers
-	VU_CHECK(vkQueueSubmit(this->queue, 1, &submit_info, VK_NULL_HANDLE));
+	check_vk_result(vkQueueSubmit(this->queue, 1, &submit_info, VK_NULL_HANDLE), "vkQueueSubmit");
 
 	// wait for the command buffer to complete, so the caller can safely use the
 	// uploaded resources right away (e.g. sample the texture in the current frame)
@@ -406,7 +406,7 @@ void factory::ensure_textures_uploaded() const
 			.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 			.sharingMode = VK_SHARING_MODE_EXCLUSIVE
 		};
-		VU_CHECK(vkCreateBuffer(this->device, &buffer_info, nullptr, &staging_buffer));
+		check_vk_result(vkCreateBuffer(this->device, &buffer_info, nullptr, &staging_buffer), "vkCreateBuffer");
 
 		VkMemoryRequirements mem_reqs{};
 		vkGetBufferMemoryRequirements(this->device, staging_buffer, &mem_reqs);
@@ -416,13 +416,13 @@ void factory::ensure_textures_uploaded() const
 			.allocationSize = mem_reqs.size,
 			.memoryTypeIndex = pick_host_visible_memory_type(this->physical_device, mem_reqs)
 		};
-		VU_CHECK(vkAllocateMemory(this->device, &alloc_info, nullptr, &staging_memory));
-		VU_CHECK(vkBindBufferMemory(this->device, staging_buffer, staging_memory, 0));
+		check_vk_result(vkAllocateMemory(this->device, &alloc_info, nullptr, &staging_memory), "vkAllocateMemory");
+		check_vk_result(vkBindBufferMemory(this->device, staging_buffer, staging_memory, 0), "vkBindBufferMemory");
 	}
 
 	// copy all texture data into the staging buffer
 	void* mapped = nullptr;
-	VU_CHECK(vkMapMemory(this->device, staging_memory, 0, total_size, 0, &mapped));
+	check_vk_result(vkMapMemory(this->device, staging_memory, 0, total_size, 0, &mapped), "vkMapMemory");
 	const auto mapped_span = utki::span<uint8_t>(static_cast<uint8_t*>(mapped), total_size);
 	VkDeviceSize offset = 0;
 	for (auto* tex : pending) {

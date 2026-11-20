@@ -147,7 +147,7 @@ context::context(
 			.queueFamilyIndex = 0
 		};
 		{
-			VU_CHECK(vkCreateCommandPool(this->device, &pool_info, nullptr, &this->command_pool));
+			check_vk_result(vkCreateCommandPool(this->device, &pool_info, nullptr, &this->command_pool), "vkCreateCommandPool");
 		}
 
 		const auto alloc_info = VkCommandBufferAllocateInfo{
@@ -156,19 +156,19 @@ context::context(
 			.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
 			.commandBufferCount = 1
 		};
-		VU_CHECK(vkAllocateCommandBuffers(this->device, &alloc_info, &this->command_buffer));
+		check_vk_result(vkAllocateCommandBuffers(this->device, &alloc_info, &this->command_buffer), "vkAllocateCommandBuffers");
 	}
 	{
 		const auto fence_info = VkFenceCreateInfo{.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
-		VU_CHECK(vkCreateFence(this->device, &fence_info, nullptr, &this->frame_fence));
+		check_vk_result(vkCreateFence(this->device, &fence_info, nullptr, &this->frame_fence), "vkCreateFence");
 	}
 	{
 		const auto sem_info = VkSemaphoreCreateInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
 		{
-			VU_CHECK(vkCreateSemaphore(this->device, &sem_info, nullptr, &this->image_available_sem));
+			check_vk_result(vkCreateSemaphore(this->device, &sem_info, nullptr, &this->image_available_sem), "vkCreateSemaphore");
 		}
 		{
-			VU_CHECK(vkCreateSemaphore(this->device, &sem_info, nullptr, &this->render_finished_sem));
+			check_vk_result(vkCreateSemaphore(this->device, &sem_info, nullptr, &this->render_finished_sem), "vkCreateSemaphore");
 		}
 	}
 	{
@@ -184,7 +184,7 @@ context::context(
 			.pPoolSizes = pool_sizes.data()
 		};
 		{
-			VU_CHECK(vkCreateDescriptorPool(this->device, &pool_info, nullptr, &this->descriptor_pool));
+			check_vk_result(vkCreateDescriptorPool(this->device, &pool_info, nullptr, &this->descriptor_pool), "vkCreateDescriptorPool");
 		}
 	}
 
@@ -216,7 +216,7 @@ void context::create_swapchain()
 	this->swapchain_format = surface_format.format;
 
 	VkSurfaceCapabilitiesKHR caps{};
-	VU_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(this->physical_device, this->vk_surface, &caps));
+	check_vk_result(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(this->physical_device, this->vk_surface, &caps), "vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
 
 	// clamp the dimensions to the supported range
 	uint32_t width = this->window_dims.x();
@@ -278,13 +278,13 @@ void context::create_swapchain()
 	}
 
 	{
-		VU_CHECK(vkCreateSwapchainKHR(this->device, &info, nullptr, &this->swapchain));
+		check_vk_result(vkCreateSwapchainKHR(this->device, &info, nullptr, &this->swapchain), "vkCreateSwapchainKHR");
 	}
 
 	uint32_t count = 0;
-	VU_CHECK(vkGetSwapchainImagesKHR(this->device, this->swapchain, &count, nullptr));
+	check_vk_result(vkGetSwapchainImagesKHR(this->device, this->swapchain, &count, nullptr), "vkGetSwapchainImagesKHR");
 	this->swapchain_images.resize(count);
-	VU_CHECK(vkGetSwapchainImagesKHR(this->device, this->swapchain, &count, this->swapchain_images.data()));
+	check_vk_result(vkGetSwapchainImagesKHR(this->device, this->swapchain, &count, this->swapchain_images.data()), "vkGetSwapchainImagesKHR");
 	this->swapchain_image_count = count;
 
 	this->window_dims = r4::vector2<uint32_t>(width, height);
@@ -317,7 +317,7 @@ void context::ensure_swapchain_valid()
 	}
 	// the window was resized (or the swapchain is suboptimal); wait for the GPU to
 	// finish before recreating the swapchain
-	VU_CHECK(vkQueueWaitIdle(this->queue));
+	check_vk_result(vkQueueWaitIdle(this->queue), "vkQueueWaitIdle");
 	// reset the frame state (the in-flight frame is discarded)
 	this->frame_begun = false;
 	this->render_pass_in_progress = false;
@@ -357,7 +357,7 @@ void context::create_depth_image()
 		.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
 	};
 	{
-		VU_CHECK(vkCreateImage(this->device, &image_info, nullptr, &this->depth_image));
+		check_vk_result(vkCreateImage(this->device, &image_info, nullptr, &this->depth_image), "vkCreateImage");
 	}
 
 	VkMemoryRequirements mem_reqs{};
@@ -367,8 +367,8 @@ void context::create_depth_image()
 		.allocationSize = mem_reqs.size,
 		.memoryTypeIndex = pick_device_local_memory_type(this->physical_device, mem_reqs)
 	};
-	VU_CHECK(vkAllocateMemory(this->device, &alloc_info, nullptr, &this->depth_image_memory));
-	VU_CHECK(vkBindImageMemory(this->device, this->depth_image, this->depth_image_memory, 0));
+	check_vk_result(vkAllocateMemory(this->device, &alloc_info, nullptr, &this->depth_image_memory), "vkAllocateMemory");
+	check_vk_result(vkBindImageMemory(this->device, this->depth_image, this->depth_image_memory, 0), "vkBindImageMemory");
 
 	{
 		const auto view_info = VkImageViewCreateInfo{
@@ -383,7 +383,7 @@ void context::create_depth_image()
 								   .baseArrayLayer = 0,
 								   .layerCount = 1}
 		};
-		VU_CHECK(vkCreateImageView(this->device, &view_info, nullptr, &this->depth_image_view));
+		check_vk_result(vkCreateImageView(this->device, &view_info, nullptr, &this->depth_image_view), "vkCreateImageView");
 	}
 }
 
@@ -458,7 +458,7 @@ void context::create_render_passes()
 		};
 		{
 			VkRenderPass render_pass{};
-			VU_CHECK(vkCreateRenderPass(this->device, &info, nullptr, &render_pass));
+			check_vk_result(vkCreateRenderPass(this->device, &info, nullptr, &render_pass), "vkCreateRenderPass");
 			return render_pass;
 		}
 	};
@@ -531,7 +531,7 @@ void context::create_swapchain_framebuffers()
 			};
 			{
 				VkImageView image_view{};
-				VU_CHECK(vkCreateImageView(this->device, &view_info, nullptr, &image_view));
+				check_vk_result(vkCreateImageView(this->device, &view_info, nullptr, &image_view), "vkCreateImageView");
 				this->swapchain_image_views[i] = image_view;
 			}
 		}
@@ -551,7 +551,7 @@ void context::create_swapchain_framebuffers()
 		};
 		{
 			VkFramebuffer fb{};
-			VU_CHECK(vkCreateFramebuffer(this->device, &fb_info, nullptr, &fb));
+			check_vk_result(vkCreateFramebuffer(this->device, &fb_info, nullptr, &fb), "vkCreateFramebuffer");
 			this->swapchain_framebuffers[i] = fb;
 		}
 	}
@@ -823,12 +823,12 @@ void context::ensure_frame_began()
 	}
 
 	// reset and begin the command buffer
-	VU_CHECK(vkResetCommandBuffer(this->command_buffer, 0));
+	check_vk_result(vkResetCommandBuffer(this->command_buffer, 0), "vkResetCommandBuffer");
 	const auto begin_info = VkCommandBufferBeginInfo{
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
 		.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
 	};
-	VU_CHECK(vkBeginCommandBuffer(this->command_buffer, &begin_info));
+	check_vk_result(vkBeginCommandBuffer(this->command_buffer, &begin_info), "vkBeginCommandBuffer");
 
 	this->frame_begun = true;
 	this->frame_has_swapchain = false;
@@ -852,7 +852,7 @@ void context::allocate_ubo_slot()
 	VkBuffer buf = VK_NULL_HANDLE;
 	{
 		VkBuffer buffer{};
-		VU_CHECK(vkCreateBuffer(this->device, &buffer_info, nullptr, &buffer));
+		check_vk_result(vkCreateBuffer(this->device, &buffer_info, nullptr, &buffer), "vkCreateBuffer");
 		buf = buffer;
 	}
 	VkMemoryRequirements mem_reqs{};
@@ -863,10 +863,10 @@ void context::allocate_ubo_slot()
 		.memoryTypeIndex = pick_host_visible_memory_type(this->physical_device, mem_reqs)
 	};
 	VkDeviceMemory mem = VK_NULL_HANDLE;
-	VU_CHECK(vkAllocateMemory(this->device, &alloc_info, nullptr, &mem));
-	VU_CHECK(vkBindBufferMemory(this->device, buf, mem, 0));
+	check_vk_result(vkAllocateMemory(this->device, &alloc_info, nullptr, &mem), "vkAllocateMemory");
+	check_vk_result(vkBindBufferMemory(this->device, buf, mem, 0), "vkBindBufferMemory");
 	void* mapped = nullptr;
-	VU_CHECK(vkMapMemory(this->device, mem, 0, sizeof(draw_uniforms), 0, &mapped));
+	check_vk_result(vkMapMemory(this->device, mem, 0, sizeof(draw_uniforms), 0, &mapped), "vkMapMemory");
 	this->ubo_ring.push_back(buf);
 	this->ubo_ring_mem.push_back(mem);
 	this->ubo_ring_map.push_back(mapped);
@@ -906,7 +906,7 @@ VkDescriptorSet context::allocate_descriptor_set(
 		.descriptorSetCount = 1,
 		.pSetLayouts = &dsl
 	};
-	VU_CHECK(vkAllocateDescriptorSets(this->device, &alloc_info, &set));
+	check_vk_result(vkAllocateDescriptorSets(this->device, &alloc_info, &set), "vkAllocateDescriptorSets");
 	this->frame_descriptor_sets.push_back(set);
 
 	std::vector<VkWriteDescriptorSet> writes;
@@ -1052,7 +1052,7 @@ rasterimage::image_variant context::readback_framebuffer_color(const ruis::rende
 			.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			.sharingMode = VK_SHARING_MODE_EXCLUSIVE
 		};
-		VU_CHECK(vkCreateBuffer(this->device, &buffer_info, nullptr, &staging_buffer));
+		check_vk_result(vkCreateBuffer(this->device, &buffer_info, nullptr, &staging_buffer), "vkCreateBuffer");
 		VkMemoryRequirements mem_reqs{};
 		vkGetBufferMemoryRequirements(this->device, staging_buffer, &mem_reqs);
 		VkPhysicalDeviceMemoryProperties props{};
@@ -1068,8 +1068,8 @@ rasterimage::image_variant context::readback_framebuffer_color(const ruis::rende
 				break;
 			}
 		}
-		VU_CHECK(vkAllocateMemory(this->device, &alloc_info, nullptr, &staging_memory));
-		VU_CHECK(vkBindBufferMemory(this->device, staging_buffer, staging_memory, 0));
+		check_vk_result(vkAllocateMemory(this->device, &alloc_info, nullptr, &staging_memory), "vkAllocateMemory");
+		check_vk_result(vkBindBufferMemory(this->device, staging_buffer, staging_memory, 0), "vkBindBufferMemory");
 	}
 
 	// append the readback to the frame's command buffer (the FBO render was recorded there)
@@ -1140,10 +1140,10 @@ rasterimage::image_variant context::readback_framebuffer_color(const ruis::rende
 			.signalSemaphoreCount = 0,
 			.pSignalSemaphores = nullptr
 		};
-		VU_CHECK(vkEndCommandBuffer(this->command_buffer));
-		VU_CHECK(vkQueueSubmit(this->queue, 1, &submit_info, VK_NULL_HANDLE));
+		check_vk_result(vkEndCommandBuffer(this->command_buffer), "vkEndCommandBuffer");
+		check_vk_result(vkQueueSubmit(this->queue, 1, &submit_info, VK_NULL_HANDLE), "vkQueueSubmit");
 		// wait for the GPU to finish using vkQueueWaitIdle (works on AMD driver)
-		VU_CHECK(vkQueueWaitIdle(this->queue));
+		check_vk_result(vkQueueWaitIdle(this->queue), "vkQueueWaitIdle");
 		this->frame_submitted = false;
 		this->frame_begun = false;
 		this->frame_has_swapchain = false;
@@ -1155,7 +1155,7 @@ rasterimage::image_variant context::readback_framebuffer_color(const ruis::rende
 	// read the data back
 	std::vector<uint8_t> buf(total_bytes);
 	void* mapped = nullptr;
-	VU_CHECK(vkMapMemory(this->device, staging_memory, 0, total_bytes, 0, &mapped));
+	check_vk_result(vkMapMemory(this->device, staging_memory, 0, total_bytes, 0, &mapped), "vkMapMemory");
 	std::memcpy(buf.data(), mapped, total_bytes);
 	vkUnmapMemory(this->device, staging_memory);
 
@@ -1409,9 +1409,9 @@ VkPipeline context::build_pipeline(
 	};
 
 	VkPipeline pipeline = VK_NULL_HANDLE;
-	VU_CHECK(
+	check_vk_result(
 		vkCreateGraphicsPipelines(this->device, this->factory.get().get_pipeline_cache(), 1, &info, nullptr, &pipeline)
-	);
+	, "vkCreateGraphicsPipelines");
 
 	// destroy the shader modules (they are now baked into the pipeline)
 	vkDestroyShaderModule(this->device, vertex_stage.module, nullptr);
@@ -1567,7 +1567,7 @@ void context::submit_frame(bool present)
 	}
 	// end the command buffer
 	{
-		VU_CHECK(vkEndCommandBuffer(this->command_buffer));
+		check_vk_result(vkEndCommandBuffer(this->command_buffer), "vkEndCommandBuffer");
 	}
 
 	// build the submit info
@@ -1588,7 +1588,7 @@ void context::submit_frame(bool present)
 		.signalSemaphoreCount = present ? 1u : 0u,
 		.pSignalSemaphores = present ? &this->render_finished_sem : nullptr
 	};
-	VU_CHECK(vkQueueSubmit(this->queue, 1, &submit_info, this->frame_fence));
+	check_vk_result(vkQueueSubmit(this->queue, 1, &submit_info, this->frame_fence), "vkQueueSubmit");
 	this->frame_submitted = true;
 
 	if (present) {
@@ -1612,8 +1612,8 @@ void context::submit_frame(bool present)
 
 	// wait for the frame to complete using vkQueueWaitIdle (safest for AMD driver)
 	{
-		VU_CHECK(vkQueueWaitIdle(this->queue));
-		VU_CHECK(vkWaitForFences(this->device, 1, &this->frame_fence, VK_TRUE, 1000000000ull)); // 1s timeout
+		check_vk_result(vkQueueWaitIdle(this->queue), "vkQueueWaitIdle");
+		check_vk_result(vkWaitForFences(this->device, 1, &this->frame_fence, VK_TRUE, 1000000000ull), "vkWaitForFences"); // 1s timeout
 		vkResetFences(this->device, 1, &this->frame_fence);
 		this->frame_submitted = false;
 	}
@@ -1655,7 +1655,7 @@ VkShaderModule context::create_shader_module(const void* spirv, size_t size_word
 	};
 	{
 		VkShaderModule shader_module{};
-		VU_CHECK(vkCreateShaderModule(this->device, &info, nullptr, &shader_module));
+		check_vk_result(vkCreateShaderModule(this->device, &info, nullptr, &shader_module), "vkCreateShaderModule");
 		return shader_module;
 	}
 }

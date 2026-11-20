@@ -49,7 +49,7 @@ void create_staging_buffer(
 	buffer_info.size = size;
 	buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 	buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	VU_CHECK(vkCreateBuffer(device, &buffer_info, nullptr, &buffer));
+	check_vk_result(vkCreateBuffer(device, &buffer_info, nullptr, &buffer), "vkCreateBuffer");
 
 	VkMemoryRequirements mem_reqs{};
 	vkGetBufferMemoryRequirements(device, buffer, &mem_reqs);
@@ -73,11 +73,11 @@ void create_staging_buffer(
 	if (!found) {
 		throw std::runtime_error("create_staging_buffer: no host-visible memory type found");
 	}
-	VU_CHECK(vkAllocateMemory(device, &alloc_info, nullptr, &memory));
-	VU_CHECK(vkBindBufferMemory(device, buffer, memory, 0));
+	check_vk_result(vkAllocateMemory(device, &alloc_info, nullptr, &memory), "vkAllocateMemory");
+	check_vk_result(vkBindBufferMemory(device, buffer, memory, 0), "vkBindBufferMemory");
 
 	void* mapped = nullptr;
-	VU_CHECK(vkMapMemory(device, memory, 0, size, 0, &mapped));
+	check_vk_result(vkMapMemory(device, memory, 0, size, 0, &mapped), "vkMapMemory");
 	std::memcpy(mapped, data, size);
 	vkUnmapMemory(device, memory);
 }
@@ -345,7 +345,7 @@ void texture_2d::create_image(rasterimage::dimensioned::dimensions_type dims)
 	image_info.usage =
 		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 	image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	VU_CHECK(vkCreateImage(ctx.device, &image_info, nullptr, &this->image));
+	check_vk_result(vkCreateImage(ctx.device, &image_info, nullptr, &this->image), "vkCreateImage");
 
 	VkMemoryRequirements mem_reqs{};
 	vkGetImageMemoryRequirements(ctx.device, this->image, &mem_reqs);
@@ -354,8 +354,8 @@ void texture_2d::create_image(rasterimage::dimensioned::dimensions_type dims)
 		.allocationSize = mem_reqs.size,
 		.memoryTypeIndex = pick_host_visible_memory_type(ctx.physical_device, mem_reqs)
 	};
-	VU_CHECK(vkAllocateMemory(ctx.device, &alloc_info, nullptr, &this->memory));
-	VU_CHECK(vkBindImageMemory(ctx.device, this->image, this->memory, 0));
+	check_vk_result(vkAllocateMemory(ctx.device, &alloc_info, nullptr, &this->memory), "vkAllocateMemory");
+	check_vk_result(vkBindImageMemory(ctx.device, this->image, this->memory, 0), "vkBindImageMemory");
 
 	const auto view_info = VkImageViewCreateInfo{
 		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -374,7 +374,7 @@ void texture_2d::create_image(rasterimage::dimensioned::dimensions_type dims)
 						 .baseArrayLayer = 0,
 						 .layerCount = 1}
 	};
-	VU_CHECK(vkCreateImageView(ctx.device, &view_info, nullptr, &this->image_view));
+	check_vk_result(vkCreateImageView(ctx.device, &view_info, nullptr, &this->image_view), "vkCreateImageView");
 }
 
 void texture_2d::create_sampler(ruis::render::factory::texture_2d_parameters params)
@@ -402,7 +402,7 @@ void texture_2d::create_sampler(ruis::render::factory::texture_2d_parameters par
 		.borderColor = VK_BORDER_COLOR_INT_TRANSPARENT_BLACK,
 		.unnormalizedCoordinates = VK_FALSE
 	};
-	VU_CHECK(vkCreateSampler(ctx.device, &sampler_info, nullptr, &this->sampler));
+	check_vk_result(vkCreateSampler(ctx.device, &sampler_info, nullptr, &this->sampler), "vkCreateSampler");
 }
 
 void texture_2d::upload_data(const uint8_t* data, size_t data_size)

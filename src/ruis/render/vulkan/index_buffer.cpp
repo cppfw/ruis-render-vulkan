@@ -93,7 +93,7 @@ void index_buffer::create_vk_buffer(const void* data, size_t size_bytes)
 		.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
 		.sharingMode = VK_SHARING_MODE_EXCLUSIVE
 	};
-	VU_CHECK(vkCreateBuffer(ctx.device, &buffer_info, nullptr, &this->buffer));
+	check_vk_result(vkCreateBuffer(ctx.device, &buffer_info, nullptr, &this->buffer), "vkCreateBuffer");
 
 	VkMemoryRequirements mem_reqs{};
 	vkGetBufferMemoryRequirements(ctx.device, this->buffer, &mem_reqs);
@@ -103,11 +103,11 @@ void index_buffer::create_vk_buffer(const void* data, size_t size_bytes)
 		.allocationSize = mem_reqs.size,
 		.memoryTypeIndex = pick_host_visible_memory_type(ctx.physical_device, mem_reqs)
 	};
-	VU_CHECK(vkAllocateMemory(ctx.device, &alloc_info, nullptr, &this->memory));
-	VU_CHECK(vkBindBufferMemory(ctx.device, this->buffer, this->memory, 0));
+	check_vk_result(vkAllocateMemory(ctx.device, &alloc_info, nullptr, &this->memory), "vkAllocateMemory");
+	check_vk_result(vkBindBufferMemory(ctx.device, this->buffer, this->memory, 0), "vkBindBufferMemory");
 
 	void* mapped = nullptr;
-	VU_CHECK(vkMapMemory(ctx.device, this->memory, 0, this->byte_size, 0, &mapped));
+	check_vk_result(vkMapMemory(ctx.device, this->memory, 0, this->byte_size, 0, &mapped), "vkMapMemory");
 	std::memcpy(mapped, data, size_bytes);
 	vkUnmapMemory(ctx.device, this->memory);
 }
