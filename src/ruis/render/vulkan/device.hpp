@@ -35,27 +35,27 @@ namespace ruis::render::vulkan {
 /**
  * @brief Owns the Vulkan instance, physical device and logical device.
  *
- * A single vulkan_device is shared across all windows of an application.
+ * A single device is shared across all windows of an application.
  * Sharing one logical device lets GPU objects created for one window (e.g. the
  * common white texture and quad vertex buffers) be used by any other window.
  *
  * The platform layer provides the instance extensions (e.g. VK_KHR_xlib_surface
  * or VK_KHR_wayland_surface) and the device extensions (e.g. VK_KHR_swapchain).
  *
- * The vulkan_device must outlive all surfaces that reference it.
+ * The device must outlive all surfaces that reference it.
  */
-class vulkan_device
+class device
 {
 public:
-	~vulkan_device();
+	~device();
 
-	vulkan_device(const vulkan_device&) = delete;
-	vulkan_device& operator=(const vulkan_device&) = delete;
-	vulkan_device(vulkan_device&&) = delete;
-	vulkan_device& operator=(vulkan_device&&) = delete;
+	device(const device&) = delete;
+	device& operator=(const device&) = delete;
+	device(device&&) = delete;
+	device& operator=(device&&) = delete;
 
 	// create the Vulkan device
-	vulkan_device(std::vector<std::string> instance_extensions, std::vector<std::string> device_extensions);
+	device(std::vector<std::string> instance_extensions, std::vector<std::string> device_extensions);
 
 	VkInstance get_instance() const
 	{
@@ -69,7 +69,7 @@ public:
 
 	VkDevice get_device() const
 	{
-		return this->device;
+		return this->vk_device;
 	}
 
 	VkQueue get_queue() const
@@ -85,7 +85,7 @@ public:
 private:
 	VkInstance instance = VK_NULL_HANDLE;
 	VkPhysicalDevice physical_device = VK_NULL_HANDLE;
-	VkDevice device = VK_NULL_HANDLE;
+	VkDevice vk_device = VK_NULL_HANDLE;
 	VkQueue queue = VK_NULL_HANDLE;
 	uint32_t graphics_queue_family = 0;
 	bool owns_instance = false;
