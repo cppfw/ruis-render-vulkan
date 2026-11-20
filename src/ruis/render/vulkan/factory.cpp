@@ -52,7 +52,10 @@ factory::factory(const utki::shared_ref<const surface>& surface) : //
 			.queueFamilyIndex = 0
 		};
 		{
-			check_vk_result(vkCreateCommandPool(this->device, &pool_info, nullptr, &this->one_shot_pool), "vkCreateCommandPool");
+			check_vk_result(
+				vkCreateCommandPool(this->device, &pool_info, nullptr, &this->one_shot_pool),
+				"vkCreateCommandPool"
+			);
 		}
 
 		const auto alloc_info = VkCommandBufferAllocateInfo{
@@ -61,7 +64,10 @@ factory::factory(const utki::shared_ref<const surface>& surface) : //
 			.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
 			.commandBufferCount = 1
 		};
-		check_vk_result(vkAllocateCommandBuffers(this->device, &alloc_info, &this->one_shot_command_buffer), "vkAllocateCommandBuffers");
+		check_vk_result(
+			vkAllocateCommandBuffers(this->device, &alloc_info, &this->one_shot_command_buffer),
+			"vkAllocateCommandBuffers"
+		);
 	}
 	{
 		const auto fence_info = VkFenceCreateInfo{.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
@@ -84,7 +90,10 @@ factory::factory(const utki::shared_ref<const surface>& surface) : //
 				.bindingCount = 1,
 				.pBindings = &ubo_binding
 			};
-			check_vk_result(vkCreateDescriptorSetLayout(this->device, &dsl_info, nullptr, &this->dsl_no_tex), "vkCreateDescriptorSetLayout");
+			check_vk_result(
+				vkCreateDescriptorSetLayout(this->device, &dsl_info, nullptr, &this->dsl_no_tex),
+				"vkCreateDescriptorSetLayout"
+			);
 		}
 
 		const auto with_tex_bindings = std::array<VkDescriptorSetLayoutBinding, 2>{
@@ -100,7 +109,10 @@ factory::factory(const utki::shared_ref<const surface>& surface) : //
 				.bindingCount = 2,
 				.pBindings = with_tex_bindings.data()
 			};
-			check_vk_result(vkCreateDescriptorSetLayout(this->device, &dsl_info, nullptr, &this->dsl_with_tex), "vkCreateDescriptorSetLayout");
+			check_vk_result(
+				vkCreateDescriptorSetLayout(this->device, &dsl_info, nullptr, &this->dsl_with_tex),
+				"vkCreateDescriptorSetLayout"
+			);
 		}
 	}
 	{
@@ -110,7 +122,10 @@ factory::factory(const utki::shared_ref<const surface>& surface) : //
 				.setLayoutCount = 1,
 				.pSetLayouts = &this->dsl_no_tex
 			};
-			check_vk_result(vkCreatePipelineLayout(this->device, &pl_info, nullptr, &this->pipeline_layout_no_tex), "vkCreatePipelineLayout");
+			check_vk_result(
+				vkCreatePipelineLayout(this->device, &pl_info, nullptr, &this->pipeline_layout_no_tex),
+				"vkCreatePipelineLayout"
+			);
 		}
 		{
 			const auto pl_info = VkPipelineLayoutCreateInfo{
@@ -118,12 +133,18 @@ factory::factory(const utki::shared_ref<const surface>& surface) : //
 				.setLayoutCount = 1,
 				.pSetLayouts = &this->dsl_with_tex
 			};
-			check_vk_result(vkCreatePipelineLayout(this->device, &pl_info, nullptr, &this->pipeline_layout_with_tex), "vkCreatePipelineLayout");
+			check_vk_result(
+				vkCreatePipelineLayout(this->device, &pl_info, nullptr, &this->pipeline_layout_with_tex),
+				"vkCreatePipelineLayout"
+			);
 		}
 	}
 	{
 		const auto pc_info = VkPipelineCacheCreateInfo{.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
-		check_vk_result(vkCreatePipelineCache(this->device, &pc_info, nullptr, &this->pipeline_cache), "vkCreatePipelineCache");
+		check_vk_result(
+			vkCreatePipelineCache(this->device, &pc_info, nullptr, &this->pipeline_cache),
+			"vkCreatePipelineCache"
+		);
 	}
 }
 
