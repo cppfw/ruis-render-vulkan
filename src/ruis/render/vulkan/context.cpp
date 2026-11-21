@@ -1458,9 +1458,6 @@ void context::begin_render_pass_internal(bool has_depth)
 	if (this->current_fb == nullptr) {
 		has_depth = true;
 	}
-	// ensure all textures are uploaded before the first render pass
-	this->factory.get().ensure_textures_uploaded();
-
 	// determine the render pass (clear or load)
 	const bool clear = this->pending_clear;
 	const auto render_pass = this->get_current_render_pass(has_depth, clear);

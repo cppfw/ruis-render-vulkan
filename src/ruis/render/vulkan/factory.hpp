@@ -173,24 +173,11 @@ public:
 	// const: it only submits GPU work, it does not mutate the factory's C++ state.
 	void one_shot(std::function<void(VkCommandBuffer)> cmd) const;
 
-	// review: what is that deferred textures uploading? can we just wait for the texture to be fully uploaded to GPU when the texture is created inside of the make_texture_2d and only then return?
-	// upload all deferred textures to the GPU (idempotent). const: it only mutates
-	// the texture objects (their upload state), not the factory's C++ state.
-	void ensure_textures_uploaded() const;
-
-	// register / unregister a texture with the factory's deferred-upload tracking.
-	// const: they only mutate the (mutable) tracking list, not the factory's C++ state.
-	void register_texture(texture_2d* t) const
-	{
-		this->all_textures.push_back(t);
-	}
-
-	void unregister_texture(texture_2d* t) const;
+	// upload a single texture to the GPU synchronously (blocks until complete).
+	// called from the texture_2d constructor after the data is converted to RGBA.
+	void upload_texture(texture_2d* t) const;
 
 private:
-	// ---- texture tracking for deferred upload (mutable: guarded by const register/unregister) ----
-	mutable std::vector<texture_2d*> all_textures;
-
 	// ---- one-shot command submission (texture uploads) ----
 	VkCommandPool one_shot_pool = VK_NULL_HANDLE;
 	VkCommandBuffer one_shot_command_buffer = VK_NULL_HANDLE;

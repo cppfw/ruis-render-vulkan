@@ -387,37 +387,13 @@ void factory::one_shot(std::function<void(VkCommandBuffer)> cmd) const
 	vkQueueWaitIdle(this->queue);
 }
 
-void factory::ensure_textures_uploaded() const
+void factory::upload_texture(texture_2d* t) const
 {
-	// find textures that need uploading (no global flag: new textures can be created at any time)
-	std::vector<texture_2d*> pending;
-	for (auto* tex : this->all_textures) {
-		if (!tex->uploaded && !tex->deferred_data.empty()) {
-			pending.push_back(tex);
-		}
-	}
-
-	if (pending.empty()) {
-		// mark empty textures as uploaded
-		for (auto* tex : this->all_textures) {
-			if (!tex->uploaded && tex->deferred_data.empty()) {
-				tex->uploaded = true;
-			}
-		}
-		return;
-	}
-
-	// calculate total staging size
-	VkDeviceSize total_size = 0;
-	for (auto* tex : pending) {
-		total_size += tex->staging_size();
-	}
-
+	const auto total_size = t->staging_size();
 	if (total_size == 0) {
 		return;
 	}
 
-	// create a single staging buffer for all textures
 	VkBuffer staging_buffer = VK_NULL_HANDLE;
 	VkDeviceMemory staging_memory = VK_NULL_HANDLE;
 	{
@@ -441,41 +417,19 @@ void factory::ensure_textures_uploaded() const
 		check_vk_result(vkBindBufferMemory(this->device, staging_buffer, staging_memory, 0), "vkBindBufferMemory");
 	}
 
-	// copy all texture data into the staging buffer
 	void* mapped = nullptr;
 	check_vk_result(vkMapMemory(this->device, staging_memory, 0, total_size, 0, &mapped), "vkMapMemory");
-	const auto mapped_span = utki::span<uint8_t>(static_cast<uint8_t*>(mapped), total_size);
-	VkDeviceSize offset = 0;
-	for (auto* tex : pending) {
-		const auto sz = tex->staging_size();
-		std::memcpy(mapped_span.subspan(offset, sz).data(), tex->deferred_data.data(), sz);
-		offset += sz;
-	}
+	std::memcpy(static_cast<uint8_t*>(mapped), t->deferred_data.data(), total_size);
 	vkUnmapMemory(this->device, staging_memory);
 
-	// record all upload commands into a single one-shot command buffer
-	VkDeviceSize cmd_offset = 0;
+	// record the upload commands and submit (one_shot() resets, submits, and waits)
 	this->one_shot([&](VkCommandBuffer cmd) {
-		for (auto* tex : pending) {
-			const auto sz = tex->staging_size();
-			tex->record_upload_commands(cmd, staging_buffer, cmd_offset);
-			cmd_offset += sz;
-		}
+		t->record_upload_commands(cmd, staging_buffer, 0);
 	});
 
-	// clean up
 	vkFreeMemory(this->device, staging_memory, nullptr);
 	vkDestroyBuffer(this->device, staging_buffer, nullptr);
 
-	// mark uploaded textures
-	for (auto* tex : pending) {
-		tex->deferred_data.clear();
-		tex->uploaded = true;
-	}
-}
-
-void factory::unregister_texture(texture_2d* t) const
-{
-	auto& tex_list = this->all_textures;
-	tex_list.erase(std::ranges::find(tex_list, t));
+	t->deferred_data.clear();
+	t->uploaded = true;
 }

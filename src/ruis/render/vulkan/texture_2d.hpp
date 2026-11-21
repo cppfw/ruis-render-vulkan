@@ -50,7 +50,6 @@ public:
 	);
 
 	// upload the data after the swapchain is ready
-	void ensure_uploaded();
 
 	texture_2d(const texture_2d&) = delete;
 	texture_2d& operator=(const texture_2d&) = delete;
@@ -61,7 +60,7 @@ public:
 
 private:
 	void create_image(rasterimage::dimensioned::dimensions_type dims);
-	void upload_data(const uint8_t* data, size_t data_size);
+
 	void create_sampler(ruis::render::factory::texture_2d_parameters params);
 
 	// deferred upload (public for batched upload in context)

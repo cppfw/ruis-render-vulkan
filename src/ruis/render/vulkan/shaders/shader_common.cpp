@@ -60,14 +60,6 @@ void vulkan_shader_render(
 
 	// make sure the texture data is uploaded to the GPU. The texture is owned by
 	// the context that created it (e.g. the shared resource-loader context),
-	// which may be different from the context that is currently rendering, so
-	// the upload must be driven from the texture itself (it uses its own
-	// context's one-shot command path).
-	if (texture != nullptr) {
-		// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, "ensure_uploaded mutates the upload state")
-		const_cast<texture_2d*>(texture)->ensure_uploaded();
-	}
-
 	ctx.ensure_frame_began();
 
 	// map the VAO's rendering mode to a Vulkan primitive topology
