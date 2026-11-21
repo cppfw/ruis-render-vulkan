@@ -1644,9 +1644,9 @@ void context::submit_frame(bool present)
 	// wait for the frame to complete using vkQueueWaitIdle (safest for AMD driver)
 	{
 		check_vk_result(vkQueueWaitIdle(this->queue), "vkQueueWaitIdle");
-		constexpr uint64_t kOneSecondNs = 1000000000ull; // 1 second in nanoseconds
+		constexpr uint64_t one_second_ns = 1000000000ull; // 1 second in nanoseconds
 		check_vk_result(
-			vkWaitForFences(this->device, 1, &this->frame_fence, VK_TRUE, kOneSecondNs),
+			vkWaitForFences(this->device, 1, &this->frame_fence, VK_TRUE, one_second_ns),
 			"vkWaitForFences"
 		);
 		vkResetFences(this->device, 1, &this->frame_fence);
