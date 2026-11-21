@@ -138,10 +138,12 @@ public:
 	bool is_depth_enabled() const noexcept override;
 	void enable_depth(bool enable) override;
 
+	void swap_frame_buffers() override;
+
 	// ===============================
 	// = vulkan-specific interface =
 
-	// present the current frame (called by the native window at the end of a frame)
+	// present the current frame
 	void present();
 
 	// the packed key of the current blend state (for pipeline selection)
