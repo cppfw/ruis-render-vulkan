@@ -45,7 +45,6 @@ void shader_color_pos_tex_alpha::render(
 	const auto& vk_tex = static_cast<const texture_2d&>(tex);
 
 	vulkan_shader_render(
-		this->factory, //
 		shader_kind::color_pos_tex_alpha,
 		std::data(spirv_shader_color_pos_tex_alpha_vertex),
 		spirv_shader_color_pos_tex_alpha_vertex_size,

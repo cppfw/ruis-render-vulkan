@@ -88,8 +88,8 @@ class context : public ruis::render::context
 {
 public:
 	context(
-		const utki::shared_ref<ruis::render::native_window>& native_window, //
-		const utki::shared_ref<const surface>& surface, //
+		utki::shared_ref<ruis::render::native_window> native_window, //
+		utki::shared_ref<const surface> surface, //
 		const utki::shared_ref<const ruis::render::vulkan::factory>& factory
 	);
 	~context() override;

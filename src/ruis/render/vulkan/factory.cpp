@@ -477,10 +477,5 @@ void factory::ensure_textures_uploaded() const
 void factory::unregister_texture(texture_2d* t) const
 {
 	auto& tex_list = this->all_textures;
-	for (auto it = tex_list.begin(); it != tex_list.end(); ++it) {
-		if (*it == t) {
-			tex_list.erase(it);
-			break;
-		}
-	}
+	tex_list.erase(std::ranges::find(tex_list, t));
 }
