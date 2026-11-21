@@ -3,7 +3,7 @@
 // non-inline function of the library to test it.
 
 #include <ruis/render/vulkan/context.hpp>
-#include <ruis/render/vulkan/vulkan_device.hpp>
+#include <ruis/render/vulkan/device.hpp>
 
 #include <functional>
 #include <iostream>
@@ -12,7 +12,7 @@ int main(int argc, const char** argv){
     // reference a non-inline function of the library to test that linking works.
     // do not call it (would require a real Vulkan device).
     std::function<void()> f = [](){
-        (void)ruis::render::vulkan::vulkan_device::make({}, {});
+        (void)ruis::render::vulkan::device::make({}, {});
     };
 
     if(!f){
