@@ -1196,6 +1196,11 @@ rasterimage::image_variant context::readback_framebuffer_color(const ruis::rende
 	return {std::move(im)};
 }
 
+void context::swap_frame_buffers()
+{
+	this->present();
+}
+
 void context::present()
 {
 	// end the render pass if in progress
