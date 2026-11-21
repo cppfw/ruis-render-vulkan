@@ -12,7 +12,8 @@ int main(int argc, const char** argv){
     // reference a non-inline function of the library to test that linking works.
     // do not call it (would require a real Vulkan device).
     std::function<void()> f = [](){
-        (void)ruis::render::vulkan::device::make({}, {});
+        auto d = new ruis::render::vulkan::device({}, {});
+        delete d;
     };
 
     if(!f){
