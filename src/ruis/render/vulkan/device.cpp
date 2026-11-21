@@ -78,13 +78,7 @@ device::~device()
 	}
 }
 
-device::device(std::vector<std::string> instance_extensions, std::vector<std::string> device_extensions) :
-	instance(VK_NULL_HANDLE),
-	physical_device(VK_NULL_HANDLE),
-	vk_device(VK_NULL_HANDLE),
-	queue(VK_NULL_HANDLE),
-	graphics_queue_family(0),
-	owns_instance(false)
+device::device(std::vector<std::string> instance_extensions, std::vector<std::string> device_extensions)
 {
 	if (device_extensions.empty()) {
 		device_extensions.emplace_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
