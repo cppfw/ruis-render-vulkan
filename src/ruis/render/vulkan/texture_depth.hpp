@@ -36,7 +36,7 @@ public:
 	VkImageView image_view = VK_NULL_HANDLE;
 
 	texture_depth(
-		const utki::shared_ref<const ruis::render::context>& rendering_context, //
+		utki::shared_ref<const ruis::render::factory> factory, //
 		r4::vector2<uint32_t> dims
 	);
 	texture_depth(const texture_depth&) = delete;
@@ -46,7 +46,6 @@ public:
 	~texture_depth() override;
 
 private:
-	const utki::shared_ref<const ruis::render::context> ctx_ref;
 	void create_image();
 };
 

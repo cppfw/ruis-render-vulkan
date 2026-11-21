@@ -28,12 +28,12 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 using namespace ruis::render::vulkan;
 
 vertex_array::vertex_array(
-	const utki::shared_ref<const ruis::render::context>& rendering_context, //
+	utki::shared_ref<const ruis::render::factory> factory, //
 	buffers_type buffers,
 	utki::shared_ref<const ruis::render::index_buffer> indices,
 	mode rendering_mode
 ) :
-	ruis::render::vertex_array(rendering_context, std::move(buffers), std::move(indices), rendering_mode)
+	ruis::render::vertex_array(std::move(factory), std::move(buffers), std::move(indices), rendering_mode)
 {
 	// all buffers must be Vulkan vertex buffers and the index buffer a Vulkan index buffer
 	for (const auto& b : this->buffers) {

@@ -33,87 +33,23 @@ namespace {
 constexpr uint8_t opaque_alpha = 255;
 } // namespace
 
-namespace {
-// create a host-visible staging buffer with the given contents
-void create_staging_buffer(
-	VkDevice device, //
-	VkPhysicalDevice physical_device,
-	const void* data,
-	VkDeviceSize size,
-	VkBuffer& buffer,
-	VkDeviceMemory& memory
-)
-{
-	VkBufferCreateInfo buffer_info{};
-	buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	buffer_info.size = size;
-	buffer_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-	buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	VU_CHECK(vkCreateBuffer(device, &buffer_info, nullptr, &buffer));
-
-	VkMemoryRequirements mem_reqs{};
-	vkGetBufferMemoryRequirements(device, buffer, &mem_reqs);
-
-	VkPhysicalDeviceMemoryProperties props{};
-	vkGetPhysicalDeviceMemoryProperties(physical_device, &props);
-	VkMemoryAllocateInfo alloc_info{};
-	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	alloc_info.allocationSize = mem_reqs.size;
-	alloc_info.memoryTypeIndex = 0;
-	bool found = false;
-	for (uint32_t i = 0; i < props.memoryTypeCount; ++i) {
-		if ((mem_reqs.memoryTypeBits & (1 << i)) &&
-			(props.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
-		{
-			alloc_info.memoryTypeIndex = i;
-			found = true;
-			break;
-		}
-	}
-	if (!found) {
-		throw std::runtime_error("create_staging_buffer: no host-visible memory type found");
-	}
-	VU_CHECK(vkAllocateMemory(device, &alloc_info, nullptr, &memory));
-	VU_CHECK(vkBindBufferMemory(device, buffer, memory, 0));
-
-	void* mapped = nullptr;
-	VU_CHECK(vkMapMemory(device, memory, 0, size, 0, &mapped));
-	std::memcpy(mapped, data, size);
-	vkUnmapMemory(device, memory);
-}
-
-void destroy_staging_buffer(VkDevice device, VkBuffer buffer, VkDeviceMemory memory)
-{
-	if (buffer != VK_NULL_HANDLE) {
-		vkDestroyBuffer(device, buffer, nullptr);
-		vkFreeMemory(device, memory, nullptr);
-	}
-}
-} // namespace
-
 texture_2d::texture_2d(
-	const utki::shared_ref<const ruis::render::context>& rendering_context, //
+	utki::shared_ref<const ruis::render::factory> factory, //
 	rasterimage::format type,
 	rasterimage::dimensioned::dimensions_type dims,
 	const uint8_t* data,
 	size_t data_size,
-	ruis::render::context::texture_2d_parameters params
+	ruis::render::factory::texture_2d_parameters params
 ) :
 	ruis::render::texture_2d(
-		rendering_context, //
+		std::move(factory), //
 		dims
 	),
 	format(to_vk_format_8bit(type)), //
-	ri_format(type), //
-	ctx_ref(rendering_context)
+	ri_format(type) //
 {
 	this->create_image(dims);
 	this->create_sampler(params);
-
-	// register with the context for deferred upload tracking
-	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, cppcoreguidelines-pro-type-static-cast-downcast, "the context is owned by the renderer; the const qualifier comes from the shared_ref<const context> API")
-	auto& vk_ctx = const_cast<context&>(static_cast<const context&>(rendering_context.get()));
-	vk_ctx.all_textures.push_back(this);
 
 	if (data != nullptr && data_size != 0) {
 		// defer the upload until the swapchain is ready
@@ -158,6 +94,73 @@ texture_2d::texture_2d(
 				this->deferred_data.assign(data_span.begin(), data_span.end());
 				break;
 		}
+		// upload the texture to the GPU synchronously
+		// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the factory is owned by the renderer; the base-class reference comes from the ruis API")
+		static_cast<const ruis::render::vulkan::factory&>(this->factory.get()).upload_texture(this);
+	} else {
+		// no data: clear the image to transparent so that undefined GPU memory
+		// does not produce garbage pixels
+		// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the factory is owned by the renderer; the base-class reference comes from the ruis API")
+		auto& vk_f = static_cast<const ruis::render::vulkan::factory&>(this->factory.get());
+		vk_f.one_shot([&](VkCommandBuffer cmd) {
+			const auto range = VkImageSubresourceRange{
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.baseMipLevel = 0,
+				.levelCount = 1,
+				.baseArrayLayer = 0,
+				.layerCount = 1
+			};
+			const auto barrier = VkImageMemoryBarrier{
+				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+				.srcAccessMask = 0,
+				.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+				.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+				.newLayout = VK_IMAGE_LAYOUT_GENERAL,
+				.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+				.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+				.image = this->image,
+				.subresourceRange = range
+			};
+			vkCmdPipelineBarrier(
+				cmd,
+				VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+				VK_PIPELINE_STAGE_TRANSFER_BIT,
+				0,
+				0,
+				nullptr,
+				0,
+				nullptr,
+				1,
+				&barrier
+			);
+			const auto clear_color = VkClearColorValue{
+				.float32 = {0.0f, 0.0f, 0.0f, 0.0f}
+			};
+			vkCmdClearColorImage(cmd, this->image, VK_IMAGE_LAYOUT_GENERAL, &clear_color, 1, &range);
+			const auto barrier2 = VkImageMemoryBarrier{
+				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+				.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+				.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+				.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+				.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+				.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+				.image = this->image,
+				.subresourceRange = range
+			};
+			vkCmdPipelineBarrier(
+				cmd,
+				VK_PIPELINE_STAGE_TRANSFER_BIT,
+				VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+				0,
+				0,
+				nullptr,
+				0,
+				nullptr,
+				1,
+				&barrier2
+			);
+		});
 	}
 }
 
@@ -237,95 +240,10 @@ void texture_2d::record_upload_commands(VkCommandBuffer cmd, VkBuffer staging_bu
 	);
 }
 
-void texture_2d::ensure_uploaded()
-{
-	if (this->uploaded) {
-		return;
-	}
-	if (this->deferred_data.empty()) {
-		// no data to upload: clear the image to transparent so that
-		// undefined GPU memory does not produce garbage pixels
-		// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, cppcoreguidelines-pro-type-static-cast-downcast, "the context is owned by the renderer; the const qualifier comes from the shared_ref<const context> API")
-		auto& ctx = const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
-		ctx.one_shot([&](VkCommandBuffer cmd) {
-			const auto range = VkImageSubresourceRange{
-				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-				.baseMipLevel = 0,
-				.levelCount = 1,
-				.baseArrayLayer = 0,
-				.layerCount = 1
-			};
-			const auto barrier = VkImageMemoryBarrier{
-				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-				.srcAccessMask = 0,
-				.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-				.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-				.newLayout = VK_IMAGE_LAYOUT_GENERAL,
-				.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-				.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-				.image = this->image,
-				.subresourceRange = range
-			};
-			vkCmdPipelineBarrier(
-				cmd,
-				VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-				VK_PIPELINE_STAGE_TRANSFER_BIT,
-				0,
-				0,
-				nullptr,
-				0,
-				nullptr,
-				1,
-				&barrier
-			);
-			const auto clear_color = VkClearColorValue{
-				.float32 = {0.0f, 0.0f, 0.0f, 0.0f}
-			};
-			vkCmdClearColorImage(cmd, this->image, VK_IMAGE_LAYOUT_GENERAL, &clear_color, 1, &range);
-			const auto barrier2 = VkImageMemoryBarrier{
-				.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-				.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-				.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-				.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-				.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-				.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-				.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-				.image = this->image,
-				.subresourceRange = range
-			};
-			vkCmdPipelineBarrier(
-				cmd,
-				VK_PIPELINE_STAGE_TRANSFER_BIT,
-				VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-				0,
-				0,
-				nullptr,
-				0,
-				nullptr,
-				1,
-				&barrier2
-			);
-		});
-		this->uploaded = true;
-		return;
-	}
-	this->upload_data(this->deferred_data.data(), this->deferred_data.size());
-	this->deferred_data.clear();
-	this->uploaded = true;
-}
-
 texture_2d::~texture_2d()
 {
-	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, cppcoreguidelines-pro-type-static-cast-downcast, "the context is owned by the renderer; the const qualifier comes from the shared_ref<const context> API")
-	auto& ctx = const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
-	// remove from the context's texture list
-	auto& tex_list = ctx.all_textures;
-	for (auto it = tex_list.begin(); it != tex_list.end(); ++it) {
-		if (*it == this) {
-			tex_list.erase(it);
-			break;
-		}
-	}
+	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the factory is owned by the renderer; the base-class reference comes from the ruis API")
+	const auto& ctx = static_cast<const ruis::render::vulkan::factory&>(this->factory.get());
 	vkDestroySampler(ctx.device, this->sampler, nullptr);
 	vkDestroyImageView(ctx.device, this->image_view, nullptr);
 	vkDestroyImage(ctx.device, this->image, nullptr);
@@ -336,8 +254,8 @@ texture_2d::~texture_2d()
 
 void texture_2d::create_image(rasterimage::dimensioned::dimensions_type dims)
 {
-	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, cppcoreguidelines-pro-type-static-cast-downcast, "the context is owned by the renderer; the const qualifier comes from the shared_ref<const context> API")
-	auto& ctx = const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
+	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the factory is owned by the renderer; the base-class reference comes from the ruis API")
+	const auto& ctx = static_cast<const ruis::render::vulkan::factory&>(this->factory.get());
 
 	VkImageCreateInfo image_info{};
 	image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -352,7 +270,7 @@ void texture_2d::create_image(rasterimage::dimensioned::dimensions_type dims)
 	image_info.usage =
 		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 	image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	VU_CHECK(vkCreateImage(ctx.device, &image_info, nullptr, &this->image));
+	check_vk_result(vkCreateImage(ctx.device, &image_info, nullptr, &this->image), "vkCreateImage");
 
 	VkMemoryRequirements mem_reqs{};
 	vkGetImageMemoryRequirements(ctx.device, this->image, &mem_reqs);
@@ -361,8 +279,8 @@ void texture_2d::create_image(rasterimage::dimensioned::dimensions_type dims)
 		.allocationSize = mem_reqs.size,
 		.memoryTypeIndex = pick_host_visible_memory_type(ctx.physical_device, mem_reqs)
 	};
-	VU_CHECK(vkAllocateMemory(ctx.device, &alloc_info, nullptr, &this->memory));
-	VU_CHECK(vkBindImageMemory(ctx.device, this->image, this->memory, 0));
+	check_vk_result(vkAllocateMemory(ctx.device, &alloc_info, nullptr, &this->memory), "vkAllocateMemory");
+	check_vk_result(vkBindImageMemory(ctx.device, this->image, this->memory, 0), "vkBindImageMemory");
 
 	const auto view_info = VkImageViewCreateInfo{
 		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -381,14 +299,13 @@ void texture_2d::create_image(rasterimage::dimensioned::dimensions_type dims)
 						 .baseArrayLayer = 0,
 						 .layerCount = 1}
 	};
-	VU_CHECK(vkCreateImageView(ctx.device, &view_info, nullptr, &this->image_view));
+	check_vk_result(vkCreateImageView(ctx.device, &view_info, nullptr, &this->image_view), "vkCreateImageView");
 }
 
-void texture_2d::create_sampler(ruis::render::context::texture_2d_parameters params)
+void texture_2d::create_sampler(ruis::render::factory::texture_2d_parameters params)
 {
-	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, cppcoreguidelines-pro-type-static-cast-downcast, "the context is owned by the renderer; the const qualifier comes from the shared_ref<const context> API")
-	auto& ctx = const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
-	(void)ctx;
+	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "the factory is owned by the renderer; the base-class reference comes from the ruis API")
+	const auto& ctx = static_cast<const ruis::render::vulkan::factory&>(this->factory.get());
 
 	const auto sampler_info = VkSamplerCreateInfo{
 		.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -410,90 +327,5 @@ void texture_2d::create_sampler(ruis::render::context::texture_2d_parameters par
 		.borderColor = VK_BORDER_COLOR_INT_TRANSPARENT_BLACK,
 		.unnormalizedCoordinates = VK_FALSE
 	};
-	VU_CHECK(vkCreateSampler(ctx.device, &sampler_info, nullptr, &this->sampler));
-}
-
-void texture_2d::upload_data(const uint8_t* data, size_t data_size)
-{
-	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, cppcoreguidelines-pro-type-static-cast-downcast, "the context is owned by the renderer; the const qualifier comes from the shared_ref<const context> API")
-	auto& ctx = const_cast<context&>(static_cast<const context&>(this->ctx_ref.get()));
-
-	VkBuffer staging_buffer = VK_NULL_HANDLE;
-	VkDeviceMemory staging_memory = VK_NULL_HANDLE;
-	create_staging_buffer(ctx.device, ctx.physical_device, data, data_size, staging_buffer, staging_memory);
-
-	ctx.one_shot([&](VkCommandBuffer cmd) {
-		const auto w = static_cast<uint32_t>(this->dims().x());
-		const auto h = static_cast<uint32_t>(this->dims().y());
-
-		// transition to transfer dst
-		const auto dst_barrier = VkImageMemoryBarrier{
-			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-			.srcAccessMask = 0,
-			.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-			.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-			.image = this->image,
-			.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
-		};
-		vkCmdPipelineBarrier(
-			cmd,
-			VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			0,
-			0,
-			nullptr,
-			0,
-			nullptr,
-			1,
-			&dst_barrier
-		);
-
-		const auto region = VkBufferImageCopy{
-			.bufferOffset = 0,
-			.bufferRowLength = 0, // 0 means tightly packed (use image width); data is always RGBA
-			.bufferImageHeight = h,
-			.imageSubresource =
-				{.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1},
-			.imageOffset = {0, 0, 0},
-			.imageExtent = {w, h, 1}
-		};
-		vkCmdCopyBufferToImage(
-			cmd, //
-			staging_buffer,
-			this->image,
-			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			1,
-			&region
-		);
-
-		// transition to shader read-only
-		const auto img_barrier = VkImageMemoryBarrier{
-			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-			.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-			.image = this->image,
-			.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
-		};
-		vkCmdPipelineBarrier(
-			cmd,
-			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-			0,
-			0,
-			nullptr,
-			0,
-			nullptr,
-			1,
-			&img_barrier
-		);
-	});
-
-	destroy_staging_buffer(ctx.device, staging_buffer, staging_memory);
+	check_vk_result(vkCreateSampler(ctx.device, &sampler_info, nullptr, &this->sampler), "vkCreateSampler");
 }

@@ -26,31 +26,31 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 namespace ruis::render::vulkan {
 
 // forward declaration
-class vulkan_device;
+class device;
 
 /**
  * @brief Provides the Vulkan resources the renderer needs for a single window.
  *
- * A single vulkan_device (instance, physical device, logical device and
+ * A single device (instance, physical device, logical device and
  * graphics queue) is shared across all windows of an application. Sharing one
  * logical device lets GPU objects created for one window (e.g. the common
  * white texture and quad vertex buffers) be used by any other window.
  *
  * The per-window VkSurfaceKHR is created by the platform layer (e.g. via the
  * VK_KHR_xlib_surface or VK_KHR_wayland_surface extension). This surface
- * provider holds a reference to the shared vulkan_device and the window's
+ * provider holds a reference to the shared device and the window's
  * surface. It owns the surface (destroying it in the destructor).
  */
-class surface_provider
+class surface
 {
 public:
-	surface_provider(const vulkan_device& device, VkSurfaceKHR surface);
-	~surface_provider();
+	surface(const device& device, VkSurfaceKHR surface);
+	~surface();
 
-	surface_provider(const surface_provider&) = delete;
-	surface_provider& operator=(const surface_provider&) = delete;
-	surface_provider(surface_provider&&) = delete;
-	surface_provider& operator=(surface_provider&&) = delete;
+	surface(const surface&) = delete;
+	surface& operator=(const surface&) = delete;
+	surface(surface&&) = delete;
+	surface& operator=(surface&&) = delete;
 
 	/**
 	 * @brief The shared Vulkan instance.
@@ -78,7 +78,7 @@ public:
 	 */
 	VkSurfaceKHR get_surface() const
 	{
-		return this->surface;
+		return this->vk_surface;
 	}
 
 	/**
@@ -86,12 +86,12 @@ public:
 	 */
 	bool has_surface() const
 	{
-		return this->surface != VK_NULL_HANDLE;
+		return this->vk_surface != VK_NULL_HANDLE;
 	}
 
 private:
-	const vulkan_device* device;
-	VkSurfaceKHR surface;
+	const device* vu_device;
+	VkSurfaceKHR vk_surface;
 };
 
 } // namespace ruis::render::vulkan

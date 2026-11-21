@@ -104,11 +104,13 @@ VkPresentModeKHR pick_present_mode(VkPhysicalDevice phys, VkSurfaceKHR surface, 
 } // namespace
 
 context::context(
-	const utki::shared_ref<ruis::render::native_window>& native_window, //
-	const utki::shared_ref<const surface_provider>& surface_provider
+	utki::shared_ref<ruis::render::native_window> native_window, //
+	utki::shared_ref<const surface> surface, //
+	const utki::shared_ref<const ruis::render::vulkan::factory>& factory
 ) :
 	ruis::render::context(
-		native_window,
+		std::move(native_window),
+		factory,
 		[] {
 			r4::matrix4<float> m{};
 			// maps the framework's normalized viewport coordinates (x right, y down,
@@ -125,15 +127,14 @@ context::context(
 			return parameters{m};
 		}()
 	),
-	physical_device(surface_provider.get().get_physical_device()), //
-	device(surface_provider.get().get_device()), //
-	surface_provider_ref(surface_provider), //
-	instance(surface_provider.get().get_instance()), //
-	queue(surface_provider.get().get_queue()), //
-	surface(surface_provider.get().get_surface())
+	factory(factory), //
+	physical_device(surface.get().get_physical_device()), //
+	device(surface.get().get_device()), //
+	surface_ref(surface), //
+	instance(surface.get().get_instance()), //
+	queue(surface.get().get_queue()), //
+	vk_surface(surface.get().get_surface())
 {
-	(void)native_window;
-
 	vkGetPhysicalDeviceProperties(this->physical_device, &this->device_properties);
 
 	// ---- command submission resources ----
@@ -144,7 +145,10 @@ context::context(
 			.queueFamilyIndex = 0
 		};
 		{
-			VU_CHECK(vkCreateCommandPool(this->device, &pool_info, nullptr, &this->command_pool));
+			check_vk_result(
+				vkCreateCommandPool(this->device, &pool_info, nullptr, &this->command_pool),
+				"vkCreateCommandPool"
+			);
 		}
 
 		const auto alloc_info = VkCommandBufferAllocateInfo{
@@ -153,42 +157,28 @@ context::context(
 			.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
 			.commandBufferCount = 1
 		};
-		VU_CHECK(vkAllocateCommandBuffers(this->device, &alloc_info, &this->command_buffer));
-	}
-	{
-		const auto pool_info = VkCommandPoolCreateInfo{
-			.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-			.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-			.queueFamilyIndex = 0
-		};
-		{
-			VU_CHECK(vkCreateCommandPool(this->device, &pool_info, nullptr, &this->one_shot_pool));
-		}
-
-		const auto alloc_info = VkCommandBufferAllocateInfo{
-			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-			.commandPool = this->one_shot_pool,
-			.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-			.commandBufferCount = 1
-		};
-		VU_CHECK(vkAllocateCommandBuffers(this->device, &alloc_info, &this->one_shot_command_buffer));
+		check_vk_result(
+			vkAllocateCommandBuffers(this->device, &alloc_info, &this->command_buffer),
+			"vkAllocateCommandBuffers"
+		);
 	}
 	{
 		const auto fence_info = VkFenceCreateInfo{.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
-		{
-			VU_CHECK(vkCreateFence(this->device, &fence_info, nullptr, &this->frame_fence));
-		}
-		{
-			VU_CHECK(vkCreateFence(this->device, &fence_info, nullptr, &this->one_shot_fence));
-		}
+		check_vk_result(vkCreateFence(this->device, &fence_info, nullptr, &this->frame_fence), "vkCreateFence");
 	}
 	{
 		const auto sem_info = VkSemaphoreCreateInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
 		{
-			VU_CHECK(vkCreateSemaphore(this->device, &sem_info, nullptr, &this->image_available_sem));
+			check_vk_result(
+				vkCreateSemaphore(this->device, &sem_info, nullptr, &this->image_available_sem),
+				"vkCreateSemaphore"
+			);
 		}
 		{
-			VU_CHECK(vkCreateSemaphore(this->device, &sem_info, nullptr, &this->render_finished_sem));
+			check_vk_result(
+				vkCreateSemaphore(this->device, &sem_info, nullptr, &this->render_finished_sem),
+				"vkCreateSemaphore"
+			);
 		}
 	}
 	{
@@ -204,66 +194,11 @@ context::context(
 			.pPoolSizes = pool_sizes.data()
 		};
 		{
-			VU_CHECK(vkCreateDescriptorPool(this->device, &pool_info, nullptr, &this->descriptor_pool));
+			check_vk_result(
+				vkCreateDescriptorPool(this->device, &pool_info, nullptr, &this->descriptor_pool),
+				"vkCreateDescriptorPool"
+			);
 		}
-	}
-
-	// ---- descriptor set layouts + pipeline layouts ----
-	{
-		// the UBO is read from both the vertex shader (matrix) and the fragment
-		// shader (color), so both stages must be in the stage flags
-		const auto ubo_binding = VkDescriptorSetLayoutBinding{
-			.binding = 0,
-			.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-			.descriptorCount = 1,
-			.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
-		};
-		{
-			const auto dsl_info = VkDescriptorSetLayoutCreateInfo{
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-				.bindingCount = 1,
-				.pBindings = &ubo_binding
-			};
-			VU_CHECK(vkCreateDescriptorSetLayout(this->device, &dsl_info, nullptr, &this->dsl_no_tex));
-		}
-
-		const auto with_tex_bindings = std::array<VkDescriptorSetLayoutBinding, 2>{
-			{ubo_binding,
-			 {.binding = 1,
-			  .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-			  .descriptorCount = 1,
-			  .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT}}
-		};
-		{
-			const auto dsl_info = VkDescriptorSetLayoutCreateInfo{
-				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-				.bindingCount = 2,
-				.pBindings = with_tex_bindings.data()
-			};
-			VU_CHECK(vkCreateDescriptorSetLayout(this->device, &dsl_info, nullptr, &this->dsl_with_tex));
-		}
-	}
-	{
-		{
-			const auto pl_info = VkPipelineLayoutCreateInfo{
-				.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-				.setLayoutCount = 1,
-				.pSetLayouts = &this->dsl_no_tex
-			};
-			VU_CHECK(vkCreatePipelineLayout(this->device, &pl_info, nullptr, &this->pipeline_layout_no_tex));
-		}
-		{
-			const auto pl_info = VkPipelineLayoutCreateInfo{
-				.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-				.setLayoutCount = 1,
-				.pSetLayouts = &this->dsl_with_tex
-			};
-			VU_CHECK(vkCreatePipelineLayout(this->device, &pl_info, nullptr, &this->pipeline_layout_with_tex));
-		}
-	}
-	{
-		const auto pc_info = VkPipelineCacheCreateInfo{.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
-		VU_CHECK(vkCreatePipelineCache(this->device, &pc_info, nullptr, &this->pipeline_cache));
 	}
 
 	// ---- per-draw uniform buffer ring ----
@@ -271,7 +206,7 @@ context::context(
 
 	// ---- swapchain (only if we have a surface; headless contexts skip this) ----
 	// must come before create_render_passes() which uses swapchain_format
-	if (this->surface_provider_ref.get().has_surface()) {
+	if (this->surface_ref.get().has_surface()) {
 		this->create_swapchain();
 	}
 
@@ -279,22 +214,25 @@ context::context(
 	this->create_render_passes();
 
 	// ---- swapchain framebuffers ----
-	if (this->surface_provider_ref.get().has_surface()) {
+	if (this->surface_ref.get().has_surface()) {
 		this->create_swapchain_framebuffers();
 	}
 }
 
 void context::create_swapchain()
 {
-	utki::assert(this->surface != VK_NULL_HANDLE, SL);
+	utki::assert(this->vk_surface != VK_NULL_HANDLE, SL);
 	const auto dims = this->native_window.get().get_dims();
 	this->window_dims = r4::vector2<uint32_t>(std::max<uint32_t>(1, dims.x()), std::max<uint32_t>(1, dims.y()));
 
-	const auto surface_format = pick_surface_format(this->physical_device, this->surface);
+	const auto surface_format = pick_surface_format(this->physical_device, this->vk_surface);
 	this->swapchain_format = surface_format.format;
 
 	VkSurfaceCapabilitiesKHR caps{};
-	VU_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(this->physical_device, this->surface, &caps));
+	check_vk_result(
+		vkGetPhysicalDeviceSurfaceCapabilitiesKHR(this->physical_device, this->vk_surface, &caps),
+		"vkGetPhysicalDeviceSurfaceCapabilitiesKHR"
+	);
 
 	// clamp the dimensions to the supported range
 	uint32_t width = this->window_dims.x();
@@ -319,13 +257,13 @@ void context::create_swapchain()
 
 	const auto vsync_enabled = this->is_vsync_enabled();
 	this->swapchain_vsync = vsync_enabled;
-	const auto present_mode = pick_present_mode(this->physical_device, this->surface, vsync_enabled);
+	const auto present_mode = pick_present_mode(this->physical_device, this->vk_surface, vsync_enabled);
 
 	const uint32_t queue_family = 0;
 
 	const auto info = VkSwapchainCreateInfoKHR{
 		.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-		.surface = this->surface,
+		.surface = this->vk_surface,
 		.minImageCount = image_count,
 		.imageFormat = this->swapchain_format,
 		.imageColorSpace = surface_format.colorSpace,
@@ -356,13 +294,16 @@ void context::create_swapchain()
 	}
 
 	{
-		VU_CHECK(vkCreateSwapchainKHR(this->device, &info, nullptr, &this->swapchain));
+		check_vk_result(vkCreateSwapchainKHR(this->device, &info, nullptr, &this->swapchain), "vkCreateSwapchainKHR");
 	}
 
 	uint32_t count = 0;
-	VU_CHECK(vkGetSwapchainImagesKHR(this->device, this->swapchain, &count, nullptr));
+	check_vk_result(vkGetSwapchainImagesKHR(this->device, this->swapchain, &count, nullptr), "vkGetSwapchainImagesKHR");
 	this->swapchain_images.resize(count);
-	VU_CHECK(vkGetSwapchainImagesKHR(this->device, this->swapchain, &count, this->swapchain_images.data()));
+	check_vk_result(
+		vkGetSwapchainImagesKHR(this->device, this->swapchain, &count, this->swapchain_images.data()),
+		"vkGetSwapchainImagesKHR"
+	);
 	this->swapchain_image_count = count;
 
 	this->window_dims = r4::vector2<uint32_t>(width, height);
@@ -379,7 +320,7 @@ void context::create_swapchain()
 void context::ensure_swapchain_valid()
 {
 	// headless contexts (e.g. resource loading) have no surface; nothing to do
-	if (!this->surface_provider_ref.get().has_surface()) {
+	if (!this->surface_ref.get().has_surface()) {
 		return;
 	}
 	// use get_dims() which accounts for the HiDPI scale factor
@@ -395,7 +336,7 @@ void context::ensure_swapchain_valid()
 	}
 	// the window was resized (or the swapchain is suboptimal); wait for the GPU to
 	// finish before recreating the swapchain
-	VU_CHECK(vkQueueWaitIdle(this->queue));
+	check_vk_result(vkQueueWaitIdle(this->queue), "vkQueueWaitIdle");
 	// reset the frame state (the in-flight frame is discarded)
 	this->frame_begun = false;
 	this->render_pass_in_progress = false;
@@ -435,7 +376,7 @@ void context::create_depth_image()
 		.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
 	};
 	{
-		VU_CHECK(vkCreateImage(this->device, &image_info, nullptr, &this->depth_image));
+		check_vk_result(vkCreateImage(this->device, &image_info, nullptr, &this->depth_image), "vkCreateImage");
 	}
 
 	VkMemoryRequirements mem_reqs{};
@@ -445,8 +386,14 @@ void context::create_depth_image()
 		.allocationSize = mem_reqs.size,
 		.memoryTypeIndex = pick_device_local_memory_type(this->physical_device, mem_reqs)
 	};
-	VU_CHECK(vkAllocateMemory(this->device, &alloc_info, nullptr, &this->depth_image_memory));
-	VU_CHECK(vkBindImageMemory(this->device, this->depth_image, this->depth_image_memory, 0));
+	check_vk_result(
+		vkAllocateMemory(this->device, &alloc_info, nullptr, &this->depth_image_memory),
+		"vkAllocateMemory"
+	);
+	check_vk_result(
+		vkBindImageMemory(this->device, this->depth_image, this->depth_image_memory, 0),
+		"vkBindImageMemory"
+	);
 
 	{
 		const auto view_info = VkImageViewCreateInfo{
@@ -461,7 +408,10 @@ void context::create_depth_image()
 								   .baseArrayLayer = 0,
 								   .layerCount = 1}
 		};
-		VU_CHECK(vkCreateImageView(this->device, &view_info, nullptr, &this->depth_image_view));
+		check_vk_result(
+			vkCreateImageView(this->device, &view_info, nullptr, &this->depth_image_view),
+			"vkCreateImageView"
+		);
 	}
 }
 
@@ -536,7 +486,7 @@ void context::create_render_passes()
 		};
 		{
 			VkRenderPass render_pass{};
-			VU_CHECK(vkCreateRenderPass(this->device, &info, nullptr, &render_pass));
+			check_vk_result(vkCreateRenderPass(this->device, &info, nullptr, &render_pass), "vkCreateRenderPass");
 			return render_pass;
 		}
 	};
@@ -609,7 +559,7 @@ void context::create_swapchain_framebuffers()
 			};
 			{
 				VkImageView image_view{};
-				VU_CHECK(vkCreateImageView(this->device, &view_info, nullptr, &image_view));
+				check_vk_result(vkCreateImageView(this->device, &view_info, nullptr, &image_view), "vkCreateImageView");
 				this->swapchain_image_views[i] = image_view;
 			}
 		}
@@ -629,7 +579,7 @@ void context::create_swapchain_framebuffers()
 		};
 		{
 			VkFramebuffer fb{};
-			VU_CHECK(vkCreateFramebuffer(this->device, &fb_info, nullptr, &fb));
+			check_vk_result(vkCreateFramebuffer(this->device, &fb_info, nullptr, &fb), "vkCreateFramebuffer");
 			this->swapchain_framebuffers[i] = fb;
 		}
 	}
@@ -643,9 +593,6 @@ context::~context()
 	if (this->frame_fence != VK_NULL_HANDLE) {
 		vkDestroyFence(this->device, this->frame_fence, nullptr);
 	}
-	if (this->one_shot_fence != VK_NULL_HANDLE) {
-		vkDestroyFence(this->device, this->one_shot_fence, nullptr);
-	}
 	if (this->image_available_sem != VK_NULL_HANDLE) {
 		vkDestroySemaphore(this->device, this->image_available_sem, nullptr);
 	}
@@ -658,33 +605,11 @@ context::~context()
 	if (this->command_pool != VK_NULL_HANDLE) {
 		vkDestroyCommandPool(this->device, this->command_pool, nullptr);
 	}
-	if (this->one_shot_command_buffer != VK_NULL_HANDLE) {
-		vkFreeCommandBuffers(this->device, this->one_shot_pool, 1, &this->one_shot_command_buffer);
-	}
-	if (this->one_shot_pool != VK_NULL_HANDLE) {
-		vkDestroyCommandPool(this->device, this->one_shot_pool, nullptr);
-	}
-
 	// destroy pipelines
 	for (auto& [key, pipeline] : this->pipelines) {
 		vkDestroyPipeline(this->device, pipeline, nullptr);
 	}
 
-	if (this->pipeline_cache != VK_NULL_HANDLE) {
-		vkDestroyPipelineCache(this->device, this->pipeline_cache, nullptr);
-	}
-	if (this->pipeline_layout_no_tex != VK_NULL_HANDLE) {
-		vkDestroyPipelineLayout(this->device, this->pipeline_layout_no_tex, nullptr);
-	}
-	if (this->pipeline_layout_with_tex != VK_NULL_HANDLE) {
-		vkDestroyPipelineLayout(this->device, this->pipeline_layout_with_tex, nullptr);
-	}
-	if (this->dsl_no_tex != VK_NULL_HANDLE) {
-		vkDestroyDescriptorSetLayout(this->device, this->dsl_no_tex, nullptr);
-	}
-	if (this->dsl_with_tex != VK_NULL_HANDLE) {
-		vkDestroyDescriptorSetLayout(this->device, this->dsl_with_tex, nullptr);
-	}
 	if (this->descriptor_pool != VK_NULL_HANDLE) {
 		vkDestroyDescriptorPool(this->device, this->descriptor_pool, nullptr);
 	}
@@ -750,179 +675,6 @@ context::~context()
 		vkDestroySwapchainKHR(this->device, this->swapchain, nullptr);
 	}
 	this->swapchain_images.clear();
-}
-
-// ===============================
-// = factory functions =
-
-utki::shared_ref<ruis::render::context::shaders> context::make_shaders() const
-{
-	auto ret = utki::make_shared<ruis::render::context::shaders>();
-	// NOLINTNEXTLINE(bugprone-unused-return-value, "false positive")
-	ret.get().pos_tex = std::make_unique<shader_pos_tex>(this->get_shared_ref());
-	// NOLINTNEXTLINE(bugprone-unused-return-value, "false positive")
-	ret.get().color_pos = std::make_unique<shader_color>(this->get_shared_ref());
-	// NOLINTNEXTLINE(bugprone-unused-return-value, "false positive")
-	ret.get().pos_clr = std::make_unique<shader_pos_clr>(this->get_shared_ref());
-	// NOLINTNEXTLINE(bugprone-unused-return-value, "false positive")
-	ret.get().color_pos_tex = std::make_unique<shader_color_pos_tex>(this->get_shared_ref());
-	// NOLINTNEXTLINE(bugprone-unused-return-value, "false positive")
-	ret.get().color_pos_tex_alpha = std::make_unique<shader_color_pos_tex_alpha>(this->get_shared_ref());
-	// NOLINTNEXTLINE(bugprone-unused-return-value, "false positive")
-	ret.get().color_pos_lum = std::make_unique<shader_color_pos_lum>(this->get_shared_ref());
-	return ret;
-}
-
-utki::shared_ref<ruis::render::texture_2d> context::make_texture_2d(
-	rasterimage::format format,
-	rasterimage::dimensioned::dimensions_type dims,
-	texture_2d_parameters params
-) const
-{
-	return utki::make_shared<texture_2d>(this->get_shared_ref(), format, dims, nullptr, 0, params);
-}
-
-utki::shared_ref<ruis::render::texture_2d> context::make_texture_2d(
-	const rasterimage::image_variant& imvar,
-	texture_2d_parameters params
-) const
-{
-	// Not supported (need rvalue reference to move the data)
-	throw std::logic_error("vulkan make_texture_2d: const image_variant not supported");
-}
-
-utki::shared_ref<ruis::render::texture_2d> context::make_texture_2d(
-	rasterimage::image_variant&& imvar, //
-	texture_2d_parameters params
-) const
-{
-	auto iv = std::move(imvar);
-	return std::visit(
-		[this, &imvar = iv, &params](auto&& im) -> utki::shared_ref<ruis::render::texture_2d> {
-			if constexpr (sizeof(im.pixels().front().front()) != 1) {
-				throw std::logic_error("vulkan make_texture_2d: non-8bit images are not supported");
-			} else {
-				// NOTE: do NOT flip_vertical() here. Unlike OpenGL (texture origin at
-				// bottom-left), Vulkan's image row 0 is the top of the texture, so the
-				// top-to-bottom image data must be uploaded as-is.
-				auto data = im.pixels();
-				return utki::make_shared<texture_2d>(
-					this->get_shared_ref(), //
-					imvar.get_format(),
-					im.dims(),
-					data.front().data(),
-					data.size_bytes(),
-					std::move(params)
-				);
-			}
-		},
-		iv.variant
-	);
-}
-
-utki::shared_ref<ruis::render::texture_depth> context::make_texture_depth(rasterimage::dimensioned::dimensions_type dims
-) const
-{
-	return utki::make_shared<texture_depth>(this->get_shared_ref(), dims);
-}
-
-utki::shared_ref<ruis::render::texture_cube> context::make_texture_cube(
-	// NOLINTNEXTLINE(cppcoreguidelines-rvalue-reference-param-not-moved, "unimplemented stub: signature must match the base class")
-	rasterimage::image_variant&& positive_x, //
-	// NOLINTNEXTLINE(cppcoreguidelines-rvalue-reference-param-not-moved, "unimplemented stub: signature must match the base class")
-	rasterimage::image_variant&& negative_x, //
-	// NOLINTNEXTLINE(cppcoreguidelines-rvalue-reference-param-not-moved, "unimplemented stub: signature must match the base class")
-	rasterimage::image_variant&& positive_y, //
-	// NOLINTNEXTLINE(cppcoreguidelines-rvalue-reference-param-not-moved, "unimplemented stub: signature must match the base class")
-	rasterimage::image_variant&& negative_y, //
-	// NOLINTNEXTLINE(cppcoreguidelines-rvalue-reference-param-not-moved, "unimplemented stub: signature must match the base class")
-	rasterimage::image_variant&& positive_z, //
-	// NOLINTNEXTLINE(cppcoreguidelines-rvalue-reference-param-not-moved, "unimplemented stub: signature must match the base class")
-	rasterimage::image_variant&& negative_z //
-) const
-{
-	(void)positive_x;
-	(void)negative_x;
-	(void)positive_y;
-	(void)negative_y;
-	(void)positive_z;
-	(void)negative_z;
-	throw std::runtime_error("vulkan make_texture_cube: not implemented");
-}
-
-utki::shared_ref<ruis::render::vertex_buffer> context::make_vertex_buffer(utki::span<const r4::vector4<float>> vertices
-) const
-{
-	std::vector<float> padded;
-	padded.reserve(vertices.size() * 4);
-	for (const auto& v : vertices) {
-		padded.push_back(v.x());
-		padded.push_back(v.y());
-		padded.push_back(v.z());
-		padded.push_back(v.w());
-	}
-	return utki::make_shared<vertex_buffer>(this->get_shared_ref(), std::move(padded));
-}
-
-utki::shared_ref<ruis::render::vertex_buffer> context::make_vertex_buffer(utki::span<const r4::vector3<float>> vertices
-) const
-{
-	std::vector<float> padded;
-	padded.reserve(vertices.size() * 4);
-	for (const auto& v : vertices) {
-		padded.push_back(v.x());
-		padded.push_back(v.y());
-		padded.push_back(v.z());
-		padded.push_back(1.0f);
-	}
-	return utki::make_shared<vertex_buffer>(this->get_shared_ref(), std::move(padded));
-}
-
-utki::shared_ref<ruis::render::vertex_buffer> context::make_vertex_buffer(utki::span<const r4::vector2<float>> vertices
-) const
-{
-	std::vector<float> padded;
-	padded.reserve(vertices.size() * 4);
-	for (const auto& v : vertices) {
-		padded.push_back(v.x());
-		padded.push_back(v.y());
-		padded.push_back(0.0f);
-		padded.push_back(1.0f);
-	}
-	return utki::make_shared<vertex_buffer>(this->get_shared_ref(), std::move(padded));
-}
-
-utki::shared_ref<ruis::render::vertex_buffer> context::make_vertex_buffer(utki::span<const float> vertices) const
-{
-	// a flat list of floats: interpreted as 4-component vertices
-	const auto count = vertices.size() / 4;
-	std::vector<float> padded(vertices.begin(), vertices.end());
-	(void)count;
-	return utki::make_shared<vertex_buffer>(this->get_shared_ref(), std::move(padded));
-}
-
-utki::shared_ref<ruis::render::index_buffer> context::make_index_buffer(utki::span<const uint16_t> indices) const
-{
-	return utki::make_shared<index_buffer>(this->get_shared_ref(), indices);
-}
-
-utki::shared_ref<ruis::render::index_buffer> context::make_index_buffer(utki::span<const uint32_t> indices) const
-{
-	return utki::make_shared<index_buffer>(this->get_shared_ref(), indices);
-}
-
-utki::shared_ref<ruis::render::vertex_array> context::make_vertex_array(
-	std::vector<utki::shared_ref<const ruis::render::vertex_buffer>> buffers, //
-	utki::shared_ref<const ruis::render::index_buffer> indices,
-	ruis::render::vertex_array::mode rendering_mode
-) const
-{
-	return utki::make_shared<vertex_array>(
-		this->get_shared_ref(),
-		std::move(buffers),
-		std::move(indices),
-		rendering_mode
-	);
 }
 
 utki::shared_ref<ruis::render::frame_buffer> context::make_framebuffer( //
@@ -1099,12 +851,12 @@ void context::ensure_frame_began()
 	}
 
 	// reset and begin the command buffer
-	VU_CHECK(vkResetCommandBuffer(this->command_buffer, 0));
+	check_vk_result(vkResetCommandBuffer(this->command_buffer, 0), "vkResetCommandBuffer");
 	const auto begin_info = VkCommandBufferBeginInfo{
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
 		.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
 	};
-	VU_CHECK(vkBeginCommandBuffer(this->command_buffer, &begin_info));
+	check_vk_result(vkBeginCommandBuffer(this->command_buffer, &begin_info), "vkBeginCommandBuffer");
 
 	this->frame_begun = true;
 	this->frame_has_swapchain = false;
@@ -1128,7 +880,7 @@ void context::allocate_ubo_slot()
 	VkBuffer buf = VK_NULL_HANDLE;
 	{
 		VkBuffer buffer{};
-		VU_CHECK(vkCreateBuffer(this->device, &buffer_info, nullptr, &buffer));
+		check_vk_result(vkCreateBuffer(this->device, &buffer_info, nullptr, &buffer), "vkCreateBuffer");
 		buf = buffer;
 	}
 	VkMemoryRequirements mem_reqs{};
@@ -1139,10 +891,10 @@ void context::allocate_ubo_slot()
 		.memoryTypeIndex = pick_host_visible_memory_type(this->physical_device, mem_reqs)
 	};
 	VkDeviceMemory mem = VK_NULL_HANDLE;
-	VU_CHECK(vkAllocateMemory(this->device, &alloc_info, nullptr, &mem));
-	VU_CHECK(vkBindBufferMemory(this->device, buf, mem, 0));
+	check_vk_result(vkAllocateMemory(this->device, &alloc_info, nullptr, &mem), "vkAllocateMemory");
+	check_vk_result(vkBindBufferMemory(this->device, buf, mem, 0), "vkBindBufferMemory");
 	void* mapped = nullptr;
-	VU_CHECK(vkMapMemory(this->device, mem, 0, sizeof(draw_uniforms), 0, &mapped));
+	check_vk_result(vkMapMemory(this->device, mem, 0, sizeof(draw_uniforms), 0, &mapped), "vkMapMemory");
 	this->ubo_ring.push_back(buf);
 	this->ubo_ring_mem.push_back(mem);
 	this->ubo_ring_map.push_back(mapped);
@@ -1173,7 +925,7 @@ VkDescriptorSet context::allocate_descriptor_set(
 	VkSampler sampler
 )
 {
-	const auto dsl = textured ? this->dsl_with_tex : this->dsl_no_tex;
+	const auto dsl = textured ? this->factory.get().get_dsl_with_tex() : this->factory.get().get_dsl_no_tex();
 
 	VkDescriptorSet set = VK_NULL_HANDLE;
 	const auto alloc_info = VkDescriptorSetAllocateInfo{
@@ -1182,7 +934,7 @@ VkDescriptorSet context::allocate_descriptor_set(
 		.descriptorSetCount = 1,
 		.pSetLayouts = &dsl
 	};
-	VU_CHECK(vkAllocateDescriptorSets(this->device, &alloc_info, &set));
+	check_vk_result(vkAllocateDescriptorSets(this->device, &alloc_info, &set), "vkAllocateDescriptorSets");
 	this->frame_descriptor_sets.push_back(set);
 
 	std::vector<VkWriteDescriptorSet> writes;
@@ -1307,134 +1059,6 @@ void context::draw_indexed(
 	vkCmdDrawIndexed(this->command_buffer, uint32_t(vk_indices.elements_count), 1, 0, 0, 0);
 }
 
-void context::one_shot(std::function<void(VkCommandBuffer)> cmd)
-{
-	// wait for all previously submitted work on the queue to complete. vkQueueWaitIdle is
-	// used instead of vkWaitForFences because the AMD driver does not respect the
-	// timeout parameter of vkWaitForFences, which deadlocks when waiting for a fence
-	// that was never submitted (e.g. the first call).
-	vkQueueWaitIdle(this->queue);
-
-	VU_CHECK(vkResetCommandBuffer(this->one_shot_command_buffer, 0));
-	const auto begin_info = VkCommandBufferBeginInfo{
-		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-		.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
-	};
-	VU_CHECK(vkBeginCommandBuffer(this->one_shot_command_buffer, &begin_info));
-
-	cmd(this->one_shot_command_buffer);
-
-	VU_CHECK(vkEndCommandBuffer(this->one_shot_command_buffer));
-
-	const auto submit_info = VkSubmitInfo{
-		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-		.waitSemaphoreCount = 0,
-		.pWaitSemaphores = nullptr,
-		.commandBufferCount = 1,
-		.pCommandBuffers = &this->one_shot_command_buffer,
-		.signalSemaphoreCount = 0,
-		.pSignalSemaphores = nullptr
-	};
-	// VK_NULL_HANDLE instead of nullptr: on 32-bit targets the Vulkan headers
-	// define non-dispatchable handles (VkFence, VkSemaphore, ...) as 64-bit
-	// integers, not pointers
-	VU_CHECK(vkQueueSubmit(this->queue, 1, &submit_info, VK_NULL_HANDLE));
-
-	// wait for the command buffer to complete, so the caller can safely use the
-	// uploaded resources right away (e.g. sample the texture in the current frame)
-	vkQueueWaitIdle(this->queue);
-}
-
-void context::ensure_textures_uploaded()
-{
-	// find textures that need uploading (no global flag: new textures can be created at any time)
-	std::vector<texture_2d*> pending;
-	for (auto* tex : this->all_textures) {
-		if (!tex->uploaded && !tex->deferred_data.empty()) {
-			pending.push_back(tex);
-		}
-	}
-
-	if (pending.empty()) {
-		// mark empty textures as uploaded
-		for (auto* tex : this->all_textures) {
-			if (!tex->uploaded && tex->deferred_data.empty()) {
-				tex->uploaded = true;
-			}
-		}
-		return;
-	}
-
-	// calculate total staging size
-	VkDeviceSize total_size = 0;
-	for (auto* tex : pending) {
-		total_size += tex->staging_size();
-	}
-
-	if (total_size == 0) {
-		return;
-	}
-
-	// create a single staging buffer for all textures
-	VkBuffer staging_buffer = VK_NULL_HANDLE;
-	VkDeviceMemory staging_memory = VK_NULL_HANDLE;
-	{
-		const auto buffer_info = VkBufferCreateInfo{
-			.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-			.size = total_size,
-			.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-			.sharingMode = VK_SHARING_MODE_EXCLUSIVE
-		};
-		VU_CHECK(vkCreateBuffer(this->device, &buffer_info, nullptr, &staging_buffer));
-
-		VkMemoryRequirements mem_reqs{};
-		vkGetBufferMemoryRequirements(this->device, staging_buffer, &mem_reqs);
-
-		VkPhysicalDeviceMemoryProperties props{};
-		vkGetPhysicalDeviceMemoryProperties(this->physical_device, &props);
-
-		const auto alloc_info = VkMemoryAllocateInfo{
-			.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-			.allocationSize = mem_reqs.size,
-			.memoryTypeIndex = pick_host_visible_memory_type(this->physical_device, mem_reqs)
-		};
-		VU_CHECK(vkAllocateMemory(this->device, &alloc_info, nullptr, &staging_memory));
-		VU_CHECK(vkBindBufferMemory(this->device, staging_buffer, staging_memory, 0));
-	}
-
-	// copy all texture data into the staging buffer
-	void* mapped = nullptr;
-	VU_CHECK(vkMapMemory(this->device, staging_memory, 0, total_size, 0, &mapped));
-	const auto mapped_span = utki::span<uint8_t>(static_cast<uint8_t*>(mapped), total_size);
-	VkDeviceSize offset = 0;
-	for (auto* tex : pending) {
-		const auto sz = tex->staging_size();
-		std::memcpy(mapped_span.subspan(offset, sz).data(), tex->deferred_data.data(), sz);
-		offset += sz;
-	}
-	vkUnmapMemory(this->device, staging_memory);
-
-	// record all upload commands into a single one-shot command buffer
-	VkDeviceSize cmd_offset = 0;
-	this->one_shot([&](VkCommandBuffer cmd) {
-		for (auto* tex : pending) {
-			const auto sz = tex->staging_size();
-			tex->record_upload_commands(cmd, staging_buffer, cmd_offset);
-			cmd_offset += sz;
-		}
-	});
-
-	// clean up
-	vkFreeMemory(this->device, staging_memory, nullptr);
-	vkDestroyBuffer(this->device, staging_buffer, nullptr);
-
-	// mark uploaded textures
-	for (auto* tex : pending) {
-		tex->deferred_data.clear();
-		tex->uploaded = true;
-	}
-}
-
 rasterimage::image_variant context::readback_framebuffer_color(const ruis::render::frame_buffer& fb)
 {
 	// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "fb is always created by this renderer")
@@ -1456,7 +1080,7 @@ rasterimage::image_variant context::readback_framebuffer_color(const ruis::rende
 			.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			.sharingMode = VK_SHARING_MODE_EXCLUSIVE
 		};
-		VU_CHECK(vkCreateBuffer(this->device, &buffer_info, nullptr, &staging_buffer));
+		check_vk_result(vkCreateBuffer(this->device, &buffer_info, nullptr, &staging_buffer), "vkCreateBuffer");
 		VkMemoryRequirements mem_reqs{};
 		vkGetBufferMemoryRequirements(this->device, staging_buffer, &mem_reqs);
 		VkPhysicalDeviceMemoryProperties props{};
@@ -1472,8 +1096,8 @@ rasterimage::image_variant context::readback_framebuffer_color(const ruis::rende
 				break;
 			}
 		}
-		VU_CHECK(vkAllocateMemory(this->device, &alloc_info, nullptr, &staging_memory));
-		VU_CHECK(vkBindBufferMemory(this->device, staging_buffer, staging_memory, 0));
+		check_vk_result(vkAllocateMemory(this->device, &alloc_info, nullptr, &staging_memory), "vkAllocateMemory");
+		check_vk_result(vkBindBufferMemory(this->device, staging_buffer, staging_memory, 0), "vkBindBufferMemory");
 	}
 
 	// append the readback to the frame's command buffer (the FBO render was recorded there)
@@ -1544,10 +1168,10 @@ rasterimage::image_variant context::readback_framebuffer_color(const ruis::rende
 			.signalSemaphoreCount = 0,
 			.pSignalSemaphores = nullptr
 		};
-		VU_CHECK(vkEndCommandBuffer(this->command_buffer));
-		VU_CHECK(vkQueueSubmit(this->queue, 1, &submit_info, VK_NULL_HANDLE));
+		check_vk_result(vkEndCommandBuffer(this->command_buffer), "vkEndCommandBuffer");
+		check_vk_result(vkQueueSubmit(this->queue, 1, &submit_info, VK_NULL_HANDLE), "vkQueueSubmit");
 		// wait for the GPU to finish using vkQueueWaitIdle (works on AMD driver)
-		VU_CHECK(vkQueueWaitIdle(this->queue));
+		check_vk_result(vkQueueWaitIdle(this->queue), "vkQueueWaitIdle");
 		this->frame_submitted = false;
 		this->frame_begun = false;
 		this->frame_has_swapchain = false;
@@ -1559,7 +1183,7 @@ rasterimage::image_variant context::readback_framebuffer_color(const ruis::rende
 	// read the data back
 	std::vector<uint8_t> buf(total_bytes);
 	void* mapped = nullptr;
-	VU_CHECK(vkMapMemory(this->device, staging_memory, 0, total_bytes, 0, &mapped));
+	check_vk_result(vkMapMemory(this->device, staging_memory, 0, total_bytes, 0, &mapped), "vkMapMemory");
 	std::memcpy(buf.data(), mapped, total_bytes);
 	vkUnmapMemory(this->device, staging_memory);
 
@@ -1570,6 +1194,11 @@ rasterimage::image_variant context::readback_framebuffer_color(const ruis::rende
 	// already the conventional top-down order, so no flip is needed.
 	auto im = rasterimage::image<uint8_t, 4>::make(r4::vector2<uint32_t>(w, h), buf.data());
 	return {std::move(im)};
+}
+
+void context::swap_frame_buffers()
+{
+	this->present();
 }
 
 void context::present()
@@ -1784,7 +1413,8 @@ VkPipeline context::build_pipeline(
 	};
 
 	// ---- layout ----
-	const auto layout = key.textured ? this->pipeline_layout_with_tex : this->pipeline_layout_no_tex;
+	const auto layout = key.textured ? this->factory.get().get_pipeline_layout_with_tex()
+									 : this->factory.get().get_pipeline_layout_no_tex();
 
 	// ---- multisample state ----
 	const auto multisample = VkPipelineMultisampleStateCreateInfo{
@@ -1812,7 +1442,10 @@ VkPipeline context::build_pipeline(
 	};
 
 	VkPipeline pipeline = VK_NULL_HANDLE;
-	VU_CHECK(vkCreateGraphicsPipelines(this->device, this->pipeline_cache, 1, &info, nullptr, &pipeline));
+	check_vk_result(
+		vkCreateGraphicsPipelines(this->device, this->factory.get().get_pipeline_cache(), 1, &info, nullptr, &pipeline),
+		"vkCreateGraphicsPipelines"
+	);
 
 	// destroy the shader modules (they are now baked into the pipeline)
 	vkDestroyShaderModule(this->device, vertex_stage.module, nullptr);
@@ -1830,9 +1463,6 @@ void context::begin_render_pass_internal(bool has_depth)
 	if (this->current_fb == nullptr) {
 		has_depth = true;
 	}
-	// ensure all textures are uploaded before the first render pass
-	this->ensure_textures_uploaded();
-
 	// determine the render pass (clear or load)
 	const bool clear = this->pending_clear;
 	const auto render_pass = this->get_current_render_pass(has_depth, clear);
@@ -1968,7 +1598,7 @@ void context::submit_frame(bool present)
 	}
 	// end the command buffer
 	{
-		VU_CHECK(vkEndCommandBuffer(this->command_buffer));
+		check_vk_result(vkEndCommandBuffer(this->command_buffer), "vkEndCommandBuffer");
 	}
 
 	// build the submit info
@@ -1989,7 +1619,7 @@ void context::submit_frame(bool present)
 		.signalSemaphoreCount = present ? 1u : 0u,
 		.pSignalSemaphores = present ? &this->render_finished_sem : nullptr
 	};
-	VU_CHECK(vkQueueSubmit(this->queue, 1, &submit_info, this->frame_fence));
+	check_vk_result(vkQueueSubmit(this->queue, 1, &submit_info, this->frame_fence), "vkQueueSubmit");
 	this->frame_submitted = true;
 
 	if (present) {
@@ -2013,8 +1643,11 @@ void context::submit_frame(bool present)
 
 	// wait for the frame to complete using vkQueueWaitIdle (safest for AMD driver)
 	{
-		VU_CHECK(vkQueueWaitIdle(this->queue));
-		VU_CHECK(vkWaitForFences(this->device, 1, &this->frame_fence, VK_TRUE, 1000000000ull)); // 1s timeout
+		check_vk_result(vkQueueWaitIdle(this->queue), "vkQueueWaitIdle");
+		check_vk_result(
+			vkWaitForFences(this->device, 1, &this->frame_fence, VK_TRUE, 1000000000ull),
+			"vkWaitForFences"
+		); // 1s timeout
 		vkResetFences(this->device, 1, &this->frame_fence);
 		this->frame_submitted = false;
 	}
@@ -2056,7 +1689,7 @@ VkShaderModule context::create_shader_module(const void* spirv, size_t size_word
 	};
 	{
 		VkShaderModule shader_module{};
-		VU_CHECK(vkCreateShaderModule(this->device, &info, nullptr, &shader_module));
+		check_vk_result(vkCreateShaderModule(this->device, &info, nullptr, &shader_module), "vkCreateShaderModule");
 		return shader_module;
 	}
 }

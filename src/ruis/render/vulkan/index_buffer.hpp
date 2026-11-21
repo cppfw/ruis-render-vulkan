@@ -33,14 +33,13 @@ class index_buffer : public ruis::render::index_buffer
 {
 public:
 	VkBuffer buffer = VK_NULL_HANDLE;
-	const utki::shared_ref<const ruis::render::context> ctx_ref;
 	VkDeviceMemory memory = VK_NULL_HANDLE;
 	VkIndexType index_type = VK_INDEX_TYPE_UINT16;
 	uint32_t elements_count = 0;
 	uint32_t byte_size = 0;
 
 	index_buffer(
-		const utki::shared_ref<const ruis::render::context>& rendering_context, //
+		utki::shared_ref<const ruis::render::factory> factory, //
 		const void* data,
 		size_t size_bytes,
 		size_t size,
@@ -48,11 +47,11 @@ public:
 	);
 
 	index_buffer(
-		const utki::shared_ref<const ruis::render::context>& rendering_context, //
+		utki::shared_ref<const ruis::render::factory> factory, //
 		utki::span<const uint16_t> indices
 	);
 	index_buffer(
-		const utki::shared_ref<const ruis::render::context>& rendering_context, //
+		utki::shared_ref<const ruis::render::factory> factory, //
 		utki::span<const uint32_t> indices
 	);
 

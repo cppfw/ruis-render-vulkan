@@ -31,7 +31,8 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 #include "shaders/shader_common.hpp"
 
-#include "surface_provider.hpp"
+#include "factory.hpp"
+#include "surface.hpp"
 #include "vulkan.hpp"
 
 namespace ruis::render::vulkan {
@@ -87,8 +88,9 @@ class context : public ruis::render::context
 {
 public:
 	context(
-		const utki::shared_ref<ruis::render::native_window>& native_window, //
-		const utki::shared_ref<const surface_provider>& surface_provider
+		utki::shared_ref<ruis::render::native_window> native_window, //
+		utki::shared_ref<const surface> surface, //
+		const utki::shared_ref<const ruis::render::vulkan::factory>& factory
 	);
 	~context() override;
 
@@ -100,54 +102,9 @@ public:
 
 	// ===============================
 	// ====== factory functions ======
-
-	utki::shared_ref<shaders> make_shaders() const override;
-
-	utki::shared_ref<ruis::render::texture_2d> make_texture_2d(
-		rasterimage::format format,
-		rasterimage::dimensioned::dimensions_type dims,
-		texture_2d_parameters params
-	) const override;
-
-	utki::shared_ref<ruis::render::texture_2d> make_texture_2d(
-		const rasterimage::image_variant& imvar,
-		texture_2d_parameters params
-	) const override;
-
-	utki::shared_ref<ruis::render::texture_2d> make_texture_2d(
-		rasterimage::image_variant&& imvar,
-		texture_2d_parameters params
-	) const override;
-
-	utki::shared_ref<ruis::render::texture_depth> make_texture_depth( //
-		rasterimage::dimensioned::dimensions_type dims
-	) const override;
-
-	utki::shared_ref<ruis::render::texture_cube> make_texture_cube(
-		rasterimage::image_variant&& positive_x,
-		rasterimage::image_variant&& negative_x,
-		rasterimage::image_variant&& positive_y,
-		rasterimage::image_variant&& negative_y,
-		rasterimage::image_variant&& positive_z,
-		rasterimage::image_variant&& negative_z
-	) const override;
-
-	utki::shared_ref<ruis::render::vertex_buffer> make_vertex_buffer(utki::span<const r4::vector4<float>> vertices
-	) const override;
-	utki::shared_ref<ruis::render::vertex_buffer> make_vertex_buffer(utki::span<const r4::vector3<float>> vertices
-	) const override;
-	utki::shared_ref<ruis::render::vertex_buffer> make_vertex_buffer(utki::span<const r4::vector2<float>> vertices
-	) const override;
-	utki::shared_ref<ruis::render::vertex_buffer> make_vertex_buffer(utki::span<const float> vertices) const override;
-
-	utki::shared_ref<ruis::render::index_buffer> make_index_buffer(utki::span<const uint16_t> indices) const override;
-	utki::shared_ref<ruis::render::index_buffer> make_index_buffer(utki::span<const uint32_t> indices) const override;
-
-	utki::shared_ref<ruis::render::vertex_array> make_vertex_array(
-		std::vector<utki::shared_ref<const ruis::render::vertex_buffer>> buffers, //
-		utki::shared_ref<const ruis::render::index_buffer> indices,
-		ruis::render::vertex_array::mode rendering_mode
-	) const override;
+	// NOTE: the shareable render objects (textures, buffers, vertex arrays, shaders)
+	// are created by the injected render factory (see factory()). The only object a
+	// context creates is the (per-window) frame buffer.
 
 	utki::shared_ref<ruis::render::frame_buffer> make_framebuffer( //
 		std::shared_ptr<ruis::render::texture_2d> color,
@@ -181,10 +138,12 @@ public:
 	bool is_depth_enabled() const noexcept override;
 	void enable_depth(bool enable) override;
 
+	void swap_frame_buffers() override;
+
 	// ===============================
 	// = vulkan-specific interface =
 
-	// present the current frame (called by the native window at the end of a frame)
+	// present the current frame
 	void present();
 
 	// the packed key of the current blend state (for pipeline selection)
@@ -227,33 +186,29 @@ public:
 		VkDescriptorSet descriptor_set
 	);
 
-	// run a one-shot command buffer (used for texture uploads); blocks until complete
-	void one_shot(std::function<void(VkCommandBuffer)> cmd);
-
 	// read back the color attachment of the given frame buffer to CPU RAM (screenshot)
 	rasterimage::image_variant readback_framebuffer_color(const ruis::render::frame_buffer& fb);
-
-	// number of components in a vertex buffer (all vertex buffers are stored as vec4)
-	static constexpr uint32_t vertex_component_count = 4;
 
 public:
 	// used by frame_buffer to read back its color pixels
 	friend class frame_buffer;
 
-	// ---- vulkan core (public: used by derived GPU resource classes) ----
+	// the render factory (shared across all windows): provides the device, the
+	// one-shot upload path, and the shared pipeline / descriptor set layouts
+	const utki::shared_ref<const ruis::render::vulkan::factory> factory;
+
+	// ---- vulkan core (used internally by this per-window context) ----
 	VkPhysicalDevice physical_device = VK_NULL_HANDLE;
 	VkDevice device = VK_NULL_HANDLE;
-	VkPipelineLayout pipeline_layout_no_tex = VK_NULL_HANDLE;
-	VkPipelineLayout pipeline_layout_with_tex = VK_NULL_HANDLE;
 
 private:
 	// keep the surface provider alive for the lifetime of the context
 	// (the surface must outlive the swapchain)
-	utki::shared_ref<const surface_provider> surface_provider_ref;
+	utki::shared_ref<const surface> surface_ref;
 
 	VkInstance instance = VK_NULL_HANDLE;
 	VkQueue queue = VK_NULL_HANDLE;
-	VkSurfaceKHR surface = VK_NULL_HANDLE;
+	VkSurfaceKHR vk_surface = VK_NULL_HANDLE;
 	VkPhysicalDeviceProperties device_properties{};
 	uint32_t graphics_queue_family = 0;
 
@@ -288,17 +243,6 @@ private:
 	VkSemaphore render_finished_sem = VK_NULL_HANDLE;
 	VkDescriptorPool descriptor_pool = VK_NULL_HANDLE;
 
-	// ---- one-shot command submission (texture uploads) ----
-	VkCommandPool one_shot_pool = VK_NULL_HANDLE;
-	VkCommandBuffer one_shot_command_buffer = VK_NULL_HANDLE;
-	VkFence one_shot_fence = VK_NULL_HANDLE;
-
-	// ---- shared descriptor / pipeline layout ----
-	VkDescriptorSetLayout dsl_no_tex = VK_NULL_HANDLE; // binding 0: UBO
-	VkDescriptorSetLayout dsl_with_tex = VK_NULL_HANDLE; // binding 0: UBO, binding 1: sampled image
-
-	VkPipelineCache pipeline_cache = VK_NULL_HANDLE;
-
 	// ---- per-draw uniform buffer ring ----
 	// each draw in a frame needs its own UBO, because the GPU reads the UBO contents at
 	// execution time (after the whole frame has been recorded), so a single shared UBO
@@ -307,12 +251,6 @@ private:
 	std::vector<VkDeviceMemory> ubo_ring_mem;
 	std::vector<void*> ubo_ring_map; // kept mapped for fast per-draw writes
 	size_t ubo_ring_index = 0; // reset at the start of each frame
-
-public:
-	// ---- texture tracking for deferred upload (public: used by texture_2d) ----
-	std::vector<texture_2d*> all_textures;
-	bool textures_uploaded = false;
-	void ensure_textures_uploaded();
 
 	// DEBUG: 0 = screen (swapchain), 1 = offscreen framebuffer
 

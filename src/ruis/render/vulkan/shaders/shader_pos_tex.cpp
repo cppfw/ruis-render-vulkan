@@ -29,9 +29,8 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 using namespace ruis::render::vulkan;
 
-shader_pos_tex::shader_pos_tex(const utki::shared_ref<const ruis::render::context>& rendering_context) :
-	ruis::render::texturing_shader(rendering_context),
-	ctx_ref(rendering_context)
+shader_pos_tex::shader_pos_tex(utki::shared_ref<const ruis::render::factory> factory) :
+	ruis::render::texturing_shader(std::move(factory))
 {}
 
 void shader_pos_tex::render(
@@ -61,7 +60,6 @@ void shader_pos_tex::render(
 	}
 
 	vulkan_shader_render(
-		this->ctx_ref, //
 		shader_kind::pos_tex,
 		std::data(spirv_shader_pos_tex_vertex),
 		spirv_shader_pos_tex_vertex_size,

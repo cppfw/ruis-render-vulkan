@@ -19,43 +19,43 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 /* ================ LICENSE END ================ */
 
-#include "surface_provider.hpp"
+#include "surface.hpp"
 
-#include "vulkan_device.hpp"
+#include "device.hpp"
 
 namespace ruis::render::vulkan {
 
-surface_provider::surface_provider(const vulkan_device& device, VkSurfaceKHR surface) :
-	device(&device),
-	surface(surface)
+surface::surface(const device& device, VkSurfaceKHR surface) :
+	vu_device(&device),
+	vk_surface(surface)
 {}
 
-surface_provider::~surface_provider()
+surface::~surface()
 {
-	if (this->surface != VK_NULL_HANDLE) {
-		vkDestroySurfaceKHR(this->device->get_instance(), this->surface, nullptr);
-		this->surface = VK_NULL_HANDLE;
+	if (this->vk_surface != VK_NULL_HANDLE) {
+		vkDestroySurfaceKHR(this->vu_device->get_instance(), this->vk_surface, nullptr);
+		this->vk_surface = VK_NULL_HANDLE;
 	}
 }
 
-VkInstance surface_provider::get_instance() const
+VkInstance surface::get_instance() const
 {
-	return this->device->get_instance();
+	return this->vu_device->get_instance();
 }
 
-VkPhysicalDevice surface_provider::get_physical_device() const
+VkPhysicalDevice surface::get_physical_device() const
 {
-	return this->device->get_physical_device();
+	return this->vu_device->get_physical_device();
 }
 
-VkDevice surface_provider::get_device() const
+VkDevice surface::get_device() const
 {
-	return this->device->get_device();
+	return this->vu_device->get_device();
 }
 
-VkQueue surface_provider::get_queue() const
+VkQueue surface::get_queue() const
 {
-	return this->device->get_queue();
+	return this->vu_device->get_queue();
 }
 
 } // namespace ruis::render::vulkan

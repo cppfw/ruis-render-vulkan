@@ -27,9 +27,8 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 using namespace ruis::render::vulkan;
 
-shader_color::shader_color(const utki::shared_ref<const ruis::render::context>& rendering_context) :
-	ruis::render::coloring_shader(rendering_context),
-	ctx_ref(rendering_context)
+shader_color::shader_color(utki::shared_ref<const ruis::render::factory> factory) :
+	ruis::render::coloring_shader(std::move(factory))
 {}
 
 void shader_color::render(
@@ -39,7 +38,6 @@ void shader_color::render(
 ) const
 {
 	vulkan_shader_render(
-		this->ctx_ref, //
 		shader_kind::color,
 		std::data(spirv_shader_color_vertex),
 		spirv_shader_color_vertex_size,
