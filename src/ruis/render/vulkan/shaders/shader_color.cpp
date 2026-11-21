@@ -38,7 +38,6 @@ void shader_color::render(
 ) const
 {
 	vulkan_shader_render(
-		this->factory, //
 		shader_kind::color,
 		std::data(spirv_shader_color_vertex),
 		spirv_shader_color_vertex_size,

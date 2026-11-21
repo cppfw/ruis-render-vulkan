@@ -104,12 +104,12 @@ VkPresentModeKHR pick_present_mode(VkPhysicalDevice phys, VkSurfaceKHR surface, 
 } // namespace
 
 context::context(
-	const utki::shared_ref<ruis::render::native_window>& native_window, //
-	const utki::shared_ref<const surface>& surface, //
+	utki::shared_ref<ruis::render::native_window> native_window, //
+	utki::shared_ref<const surface> surface, //
 	const utki::shared_ref<const ruis::render::vulkan::factory>& factory
 ) :
 	ruis::render::context(
-		native_window,
+		std::move(native_window),
 		factory,
 		[] {
 			r4::matrix4<float> m{};
@@ -135,8 +135,6 @@ context::context(
 	queue(surface.get().get_queue()), //
 	vk_surface(surface.get().get_surface())
 {
-	(void)native_window;
-
 	vkGetPhysicalDeviceProperties(this->physical_device, &this->device_properties);
 
 	// ---- command submission resources ----

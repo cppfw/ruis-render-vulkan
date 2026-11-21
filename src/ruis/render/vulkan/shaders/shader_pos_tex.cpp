@@ -60,7 +60,6 @@ void shader_pos_tex::render(
 	}
 
 	vulkan_shader_render(
-		this->factory, //
 		shader_kind::pos_tex,
 		std::data(spirv_shader_pos_tex_vertex),
 		spirv_shader_pos_tex_vertex_size,

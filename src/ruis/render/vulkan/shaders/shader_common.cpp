@@ -31,7 +31,6 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 namespace ruis::render::vulkan {
 
 void vulkan_shader_render(
-	const utki::shared_ref<const ruis::render::factory>& factory, // NOLINT (unused: render uses context::current())
 	shader_kind kind,
 	const void* vertex_spirv,
 	size_t vertex_spirv_len,
@@ -43,8 +42,6 @@ void vulkan_shader_render(
 	const ruis::render::vertex_array& va
 )
 {
-	(void)factory;
-
 	// use the currently active context (set by ruis::render::context::apply()),
 	// not the context stored in the shader (which may be the shared resource-loader context).
 	auto& ctx =

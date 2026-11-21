@@ -173,6 +173,7 @@ public:
 	// const: it only submits GPU work, it does not mutate the factory's C++ state.
 	void one_shot(std::function<void(VkCommandBuffer)> cmd) const;
 
+	// review: what is that deferred textures uploading? can we just wait for the texture to be fully uploaded to GPU when the texture is created inside of the make_texture_2d and only then return?
 	// upload all deferred textures to the GPU (idempotent). const: it only mutates
 	// the texture objects (their upload state), not the factory's C++ state.
 	void ensure_textures_uploaded() const;

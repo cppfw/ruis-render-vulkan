@@ -38,7 +38,6 @@ void shader_color_pos_lum::render(
 ) const
 {
 	vulkan_shader_render(
-		this->factory, //
 		shader_kind::color_pos_lum,
 		std::data(spirv_shader_color_pos_lum_vertex),
 		spirv_shader_color_pos_lum_vertex_size,
