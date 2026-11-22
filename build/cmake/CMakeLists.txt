@@ -2,12 +2,6 @@ cmake_minimum_required(VERSION 3.30)
 
 project(ruis-render-vulkan)
 
-# No vulkan renderer for iOS.
-# NOTE: this check should go after project() declaration because IOS variable is initialized only then.
-if(IOS)
-    return()
-endif()
-
 set(dir_name ruis)
 
 # !!! find_package must go after project() declaration !!!
