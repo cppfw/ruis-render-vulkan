@@ -389,7 +389,10 @@ void factory::one_shot(std::function<void(VkCommandBuffer)> cmd) const
 
 void factory::upload_texture(texture_2d* t) const
 {
-	const auto total_size = t->staging_size();
+	// the cast produces a size_t (not VkDeviceSize): used both for the Vulkan API
+	// (which widens it) and for host-side copies, avoiding narrowing conversions
+	// on 32-bit targets
+	const auto total_size = size_t(t->staging_size());
 	if (total_size == 0) {
 		return;
 	}

@@ -1068,7 +1068,9 @@ rasterimage::image_variant context::readback_framebuffer_color(const ruis::rende
 	const auto w = uint32_t(color.dims().x());
 	const auto h = uint32_t(color.dims().y());
 	const size_t row_bytes = size_t(w) * 4; // RGBA8
-	const VkDeviceSize total_bytes = row_bytes * h;
+	// size_t (not VkDeviceSize): used both for the Vulkan API (which widens it)
+	// and for host-side allocations/copies, avoiding narrowing conversions on 32-bit targets
+	const size_t total_bytes = row_bytes * h;
 
 	// create a host-visible staging buffer for the readback
 	VkBuffer staging_buffer = VK_NULL_HANDLE;
