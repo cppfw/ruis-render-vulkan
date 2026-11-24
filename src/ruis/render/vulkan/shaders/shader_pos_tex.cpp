@@ -46,10 +46,7 @@ void shader_pos_tex::render(
 	// textured quads always use alpha blending so that transparent/empty
 	// textures do not overwrite the background
 	{
-		auto& ctx =
-			// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "vulkan context")
-			// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-			const_cast<ruis::render::context&>(ruis::render::context::current());
+		auto& ctx = ruis::render::context::current();
 		ctx.enable_blend(true);
 		ctx.set_blend_func(
 			ruis::render::context::blend_factor::src_alpha, //

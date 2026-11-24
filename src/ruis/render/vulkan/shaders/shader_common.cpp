@@ -43,10 +43,12 @@ void vulkan_shader_render(
 )
 {
 	// use the currently active context (set by ruis::render::context::apply()),
-	// not the context stored in the shader (which may be the shared resource-loader context).
+	// not the context stored in the shader (which may be the shared resource-loader context)
+	auto& cur = ruis::render::context::current();
+	utki::assert(dynamic_cast<const context*>(&cur) != nullptr, SL);
 	auto& ctx =
-		// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast, cppcoreguidelines-pro-type-static-cast-downcast, "the context is owned by the renderer; the const qualifier comes from the ruis API")
-		const_cast<context&>(static_cast<const context&>(ruis::render::context::current()));
+		// NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast, "assert(dynamic_cast) done above")
+		static_cast<context&>(cur);
 
 	const bool textured = shader_has_texture(kind);
 
