@@ -21,6 +21,7 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 #include "context.hpp"
 
+#include <algorithm>
 #include <cstring>
 #include <limits>
 
@@ -725,9 +726,15 @@ r4::vector2<uint32_t> context::to_window_coords(const ruis::vec2& point) const
 	const auto p = r4::vector2<float>(point.x(), point.y());
 	const auto w = this->window_dims.x();
 	const auto h = this->window_dims.y();
+	// clamp the result to the window bounds (same as the GL variant): without the
+	// clamp a point outside the window would produce a negative value which, when
+	// cast to uint32_t, wraps around to a huge number and corrupts the scissor
+	// rectangle (the widget's contents would disappear instead of being clipped)
+	const auto fx = std::min(static_cast<float>(w), std::max(0.0f, (p.x() + 1.0f) * ndc_to_unit_scale * static_cast<float>(w)));
+	const auto fy = std::min(static_cast<float>(h), std::max(0.0f, (p.y() + 1.0f) * ndc_to_unit_scale * static_cast<float>(h)));
 	r4::vector2<uint32_t> result;
-	result.x() = static_cast<uint32_t>((p.x() + 1.0f) * ndc_to_unit_scale * static_cast<float>(w));
-	result.y() = static_cast<uint32_t>((p.y() + 1.0f) * ndc_to_unit_scale * static_cast<float>(h));
+	result.x() = static_cast<uint32_t>(fx);
+	result.y() = static_cast<uint32_t>(fy);
 	return result;
 }
 
