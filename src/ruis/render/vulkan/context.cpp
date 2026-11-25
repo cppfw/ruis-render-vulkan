@@ -44,7 +44,7 @@ using namespace ruis::render::vulkan;
 namespace {
 
 // maps NDC (-1 .. 1) to the unit range (0 .. 1)
-constexpr float ndc_to_unit_scale = 0.5f;
+constexpr ruis::real ndc_to_unit_scale = ruis::real(0.5);
 
 // number of bits per blend factor in the packed blend key (15 values fit in 4,
 // use 5 for simplicity)
@@ -723,19 +723,15 @@ void context::clear_framebuffer_stencil()
 r4::vector2<uint32_t> context::to_window_coords(const ruis::vec2& point) const
 {
 	// NDC -> window space using the swapchain (physical) dimensions
-	const auto p = r4::vector2<float>(point.x(), point.y());
-	const auto w = this->window_dims.x();
-	const auto h = this->window_dims.y();
+	const auto dims = this->window_dims.to<ruis::real>();
 	// clamp the result to the window bounds (same as the GL variant): without the
 	// clamp a point outside the window would produce a negative value which, when
 	// cast to uint32_t, wraps around to a huge number and corrupts the scissor
 	// rectangle (the widget's contents would disappear instead of being clipped)
-	const auto fx = std::min(static_cast<float>(w), std::max(0.0f, (p.x() + 1.0f) * ndc_to_unit_scale * static_cast<float>(w)));
-	const auto fy = std::min(static_cast<float>(h), std::max(0.0f, (p.y() + 1.0f) * ndc_to_unit_scale * static_cast<float>(h)));
-	r4::vector2<uint32_t> result;
-	result.x() = static_cast<uint32_t>(fx);
-	result.y() = static_cast<uint32_t>(fy);
-	return result;
+	auto res = (point + ruis::vec2(1, 1)) * ndc_to_unit_scale;
+	res.comp_multiply(dims);
+	res = min(dims, max(res, ruis::vec2(0, 0)));
+	return round(res).to<uint32_t>();
 }
 
 bool context::is_scissor_enabled() const noexcept
